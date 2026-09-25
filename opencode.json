@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "specter-osint": {
+        "type": "local",
+        "command": [
+          "uv",
+          "--directory",
+          "C:\\Users\\victo\\repos\\osint",
+          "run",
+          "python",
+          "-m",
+          "specter.server"
+        ],
+        "enabled": true
+      }
+    }
+  }
+}

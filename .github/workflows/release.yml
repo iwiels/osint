@@ -1,0 +1,76 @@
+name: Release
+
+# Empaqueta el instalador Windows al crear un tag vX.Y.Z.
+# Artefactos: SpecterOSINT-<ver>-setup.exe (instalador) y specter-engine.exe (standalone)
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # necesario para crear el GitHub Release con artifacts
+
+jobs:
+  engine:
+    name: Engine binario (PyInstaller)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: engine/requirements.txt
+
+      - name: Install engine deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r engine/requirements.txt pyinstaller
+
+      - name: Build engine executable
+        run: python scripts/build-engine.py
+
+      - name: Upload engine artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: specter-engine
+          path: dist-engine/specter-engine.exe
+
+  desktop:
+    name: Instalador Windows (NSIS)
+    runs-on: windows-latest
+    needs: engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Download engine binary
+        uses: actions/download-artifact@v4
+        with:
+          name: specter-engine
+          path: dist-engine
+
+      - name: Install JS deps
+        run: npm install --no-audit --no-fund
+        env:
+          SPECTER_SKIP_ENGINE_SETUP: "1"
+
+      - name: Build desktop app
+        run: npm run build
+
+      - name: Package installer
+        run: npm run dist --workspace desktop
+        env:
+          # Sin token de publicación; artifacts solo al GitHub Release
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/release/*.exe
+          generate_release_notes: true

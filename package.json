@@ -1,0 +1,26 @@
+{
+  "name": "specter-osint",
+  "version": "0.2.0",
+  "private": true,
+  "description": "SpecterOSINT - Forensic Intelligence Platform (Electron desktop + Python engine)",
+  "license": "MIT",
+  "workspaces": [
+    "packages/sdk",
+    "desktop"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace desktop",
+    "build": "npm run build --workspace desktop",
+    "typecheck": "npm run typecheck --workspace packages/sdk && npm run typecheck --workspace desktop",
+    "test": "npm run test --workspace packages/sdk",
+    "lint": "node scripts/run-python.js -m ruff check engine/ tests/ && node scripts/run-python.js -m ruff format --check engine/ tests/",
+    "test:py": "node scripts/run-python.js -m pytest tests/ -q",
+    "verify": "npm run lint && npm run test:py && npm run typecheck && npm test && npm run build",
+    "engine:serve": "python -m engine.http_server --port 8787",
+    "dist:win": "npm run build && npm run dist --workspace desktop",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

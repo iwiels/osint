@@ -1,0 +1,72 @@
+[project]
+name = "specter-osint"
+version = "0.2.0"
+description = "SpecterOSINT - Forensic Intelligence Platform (Python engine + Electron desktop)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "mcp[cli]>=1.3.0",
+    "networkx>=3.2",
+    "pydantic>=2.7.0",
+    "httpx>=0.27.0",
+    "dnspython>=2.6.0",
+    "pillow>=10.3.0",
+    "pypdf>=4.2.0",
+    "jinja2>=3.1.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+build = [
+    "pyinstaller>=6.10.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["engine/specter"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["engine"]
+addopts = "--cov=specter --cov=engine --cov-report=term-missing:skip-covered --cov-fail-under=55"
+
+[tool.coverage.run]
+source = ["engine"]
+omit = [
+    "engine/specter/cli.py",  # demo manual interactivo; sin lógica de producción
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "build-engine", "dist-engine"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (imports ordenados)
+    "B",   # bugbear (bugs comunes)
+    "UP",  # pyupgrade (sintaxis moderna)
+    "SIM", # simplificaciones
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Los mocks de tests usan firma flexible; la demo imprime libremente.
+"tests/*" = ["SIM117"]
+# El servidor resuelve rutas (sys.path) antes de importar FastAPI: E402 intencional.
+"engine/http_server.py" = ["E402"]
+# Kernel legado con líneas largas: se corrige incrementalmente (ver roadmap calidad).
+"engine/specter/*" = ["E501"]
+"engine/specter/cli.py" = ["E402"]

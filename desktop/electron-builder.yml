@@ -1,0 +1,32 @@
+appId: io.specter.osint
+productName: SpecterOSINT
+copyright: MIT
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+
+extraResources:
+  - from: ../dist-engine/
+    to: engine/
+    filter: ["specter-engine.exe"]
+
+# Instalador NSIS para Windows con acceso por usuario (no requiere admin)
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-setup.exe
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: SpecterOSINT
+
+publish: null

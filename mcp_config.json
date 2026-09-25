@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "specter-osint": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "<ABSOLUTE_PATH_TO_THIS_REPO>",
+        "run",
+        "python",
+        "-m",
+        "src.server"
+      ],
+      "description": "Servidor MCP de Ciberinteligencia OSINT y Grafos Forenses (SpecterOSINT)"
+    }
+  }
+}
