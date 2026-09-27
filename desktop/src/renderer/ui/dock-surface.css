@@ -1,0 +1,56 @@
+@layer components {
+  [data-dock-surface="shell"] {
+    position: relative;
+    z-index: 10;
+    border-radius: var(--radius-2xl);
+    background-color: var(--surface-raised-stronger-non-alpha);
+    box-shadow: var(--shadow-xs-border);
+    overflow: clip;
+  }
+
+  [data-dock-surface="tray"] {
+    position: relative;
+    z-index: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-weak-base);
+    border-radius: var(--radius-2xl);
+    background-color: var(--background-base);
+    overflow: clip;
+  }
+
+  /* La bandeja se pega por debajo de la superficie principal. */
+  [data-dock-surface="tray"][data-dock-attach="top"] {
+    margin-top: -0.875rem;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  [data-component="dock-prompt"] {
+    padding: 12px;
+    gap: 10px;
+
+    &:focus-visible {
+      outline: none;
+    }
+
+    &[data-kind="permission"] {
+      border-top: 2px solid var(--warning);
+      background-color: var(--surface-warning-weak);
+    }
+    &[data-kind="question"] {
+      border-top: 2px solid var(--brand);
+      background-color: var(--surface-brand-weak);
+    }
+    &[data-kind="todo"] {
+      border-top: 2px solid var(--info);
+      background-color: var(--surface-info-weak);
+    }
+    &[data-kind="revert"] {
+      border-top: 2px solid var(--critical);
+      background-color: var(--surface-critical-weak);
+    }
+  }
+}

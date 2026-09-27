@@ -1,0 +1,114 @@
+@layer components {
+  [data-component="tabs"][data-slot="tabs-list"] {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+
+    [data-slot="tabs-trigger"] {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 30px;
+      padding: 0 10px;
+      border: 1px solid transparent;
+      border-radius: var(--ill-r-md, 4px) var(--ill-r-md, 4px) 0 0;
+      background-color: transparent;
+      color: var(--text-weak);
+      font-family: var(--font-family-sans);
+      font-size: var(--font-size-x-small);
+      font-weight: var(--font-weight-medium);
+      line-height: 1;
+      letter-spacing: var(--letter-spacing-caps);
+      text-transform: uppercase;
+      white-space: nowrap;
+      cursor: default;
+      user-select: none;
+      transition:
+        color var(--duration-base) var(--ease-standard),
+        background-color var(--duration-base) var(--ease-standard),
+        border-color var(--duration-base) var(--ease-standard),
+        box-shadow var(--duration-base) var(--ease-standard);
+
+      &:hover {
+        color: var(--text-strong);
+      }
+      &:focus-visible {
+        box-shadow: var(--shadow-xs-border-focus);
+        outline: none;
+      }
+      &[data-disabled] {
+        color: var(--text-weaker);
+      }
+    }
+
+    /* ---- Variante underline (silueta carpeta manila / drafting) ----- */
+    &[data-variant="underline"] {
+      border-bottom: 1px solid var(--border-weak-base);
+      gap: 4px;
+
+      [data-slot="tabs-trigger"] {
+        position: relative;
+        height: 32px;
+        padding: 0 12px;
+        border-top: 2px solid transparent;
+        border-left: 1px solid transparent;
+        border-right: 1px solid transparent;
+        border-bottom: 1px solid transparent;
+        border-radius: var(--ill-r-md, 4px) var(--ill-r-md, 4px) 0 0;
+        margin-bottom: -1px;
+
+        &:hover:not([data-state="active"]) {
+          color: var(--text-strong);
+          background-color: var(--surface-base-hover);
+        }
+
+        &[data-state="active"] {
+          background-color: var(--surface-raised-base);
+          border-top-color: var(--brand);
+          border-left-color: var(--border-weak-base);
+          border-right-color: var(--border-weak-base);
+          border-bottom-color: var(--surface-raised-base);
+          color: var(--text-strong);
+          box-shadow: inset 0 1px 0 light-dark(rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.05));
+        }
+      }
+    }
+
+    /* ---- Variante pill (conmutador técnico compacto con sombra dura) --- */
+    &[data-variant="pill"] {
+      padding: 2px;
+      gap: 2px;
+      border: 1px solid var(--border-weak-base);
+      border-radius: var(--ill-r-md, 4px);
+      background-color: var(--surface-inset-base);
+
+      [data-slot="tabs-trigger"] {
+        height: 24px;
+        padding: 0 10px;
+        border: 1px solid transparent;
+        border-radius: var(--ill-r-sm, 2px);
+        font-size: var(--font-size-x-small);
+        letter-spacing: var(--letter-spacing-caps);
+        text-transform: uppercase;
+
+        &:hover:not([data-state="active"]) {
+          background-color: var(--surface-base-hover);
+          color: var(--text-strong);
+        }
+
+        &[data-state="active"] {
+          background-color: var(--surface-raised-strong);
+          border-color: var(--border-base);
+          box-shadow: 1px 1px 0 light-dark(hsl(0 0% 0% / 0.18), var(--border-weak-base));
+          color: var(--text-strong);
+        }
+      }
+    }
+  }
+
+  [data-slot="tabs-content"] {
+    min-width: 0;
+    outline: none;
+  }
+}

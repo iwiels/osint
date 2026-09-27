@@ -1,0 +1,163 @@
+/* ============================================================
+   SpecterOSINT — Utilidades
+   ------------------------------------------------------------
+   Sólo lo que Tailwind no cubre y usamos en más de un componente.
+   ============================================================ */
+
+@layer utilities {
+  /* Enlace "saltar al contenido": invisible hasta que recibe foco con teclado
+     (WCAG 2.4.1). Evita tabular por el raíl de casos en cada recarga. */
+  .skip-link {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 100;
+    padding: 8px 12px;
+    border: 1px solid var(--border-brand-base);
+    border-radius: var(--radius-md);
+    background-color: var(--surface-raised-stronger);
+    box-shadow: var(--shadow-md);
+    color: var(--text-strong);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    text-decoration: none;
+    transform: translateY(-200%);
+    transition: transform var(--duration-base) var(--ease-standard);
+  }
+  .skip-link:focus-visible {
+    transform: translateY(0);
+  }
+
+  /* Rótulo de sección: micro-etiqueta de interfaz (sustituye al viejo
+     `.section-label`). Color y tamaño vienen de tokens, nunca sueltos. */
+  .label-caps {
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    line-height: 1;
+    letter-spacing: var(--letter-spacing-caps);
+    text-transform: uppercase;
+    color: var(--text-weak);
+  }
+
+  /* Dato forense: monoespaciado y con números tabulares para que las
+     columnas de hashes/fechas no bailen. */
+  .mono-data {
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .selectable-text {
+    user-select: text;
+    cursor: text;
+  }
+
+  .no-scrollbar {
+    &::-webkit-scrollbar {
+      display: none;
+    }
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Fondo de tablero: retícula sutil para zonas de lienzo (grafo, capturas). */
+  .grid-canvas {
+    background-image:
+      linear-gradient(var(--surface-base-hover) 1px, transparent 1px),
+      linear-gradient(90deg, var(--surface-base-hover) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Relleno del raíl del menú lateral / barras de herramientas. */
+  .hairline-x {
+    border-inline: 1px solid var(--border-weak-base);
+  }
+  .hairline-y {
+    border-block: 1px solid var(--border-weak-base);
+  }
+
+  /* ---- Utilidades de delineado arquitectónico (Illoca drafting) ----- */
+
+  /* Retícula de plano técnico (Illoca blueprint drafting grid) */
+  .bg-blueprint-grid {
+    background-image:
+      repeating-linear-gradient(90deg, light-dark(rgba(64, 74, 80, 0.08), rgba(66, 66, 66, 0.06)) 0px, light-dark(rgba(64, 74, 80, 0.08), rgba(66, 66, 66, 0.06)) 1px, transparent 1px, transparent 16px),
+      repeating-linear-gradient(0deg, light-dark(rgba(64, 74, 80, 0.08), rgba(66, 66, 66, 0.06)) 0px, light-dark(rgba(64, 74, 80, 0.08), rgba(66, 66, 66, 0.06)) 1px, transparent 1px, transparent 16px);
+    background-size: 16px 16px;
+  }
+
+  .shadow-paper-xs {
+    box-shadow: var(--shadow-paper-xs);
+  }
+  .shadow-paper-sm {
+    box-shadow: var(--shadow-paper-sm);
+  }
+  .shadow-paper-md {
+    box-shadow: var(--shadow-paper-md);
+  }
+
+  /* Subrayado de corrección técnica redline */
+  .underline-draft {
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: var(--redline);
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+  }
+
+  /* Marginalia técnica: coordenadas y metadatos de plano perimetrales */
+  .coords-marginalia {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-x-small);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--letter-spacing-caps);
+    text-transform: uppercase;
+    color: var(--text-weaker);
+    user-select: none;
+  }
+
+  /* Sello de verificación forense / plano arquitectónico (stamp badge) */
+  .stamp-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border: 1px solid light-dark(var(--terracotta), #b83818);
+    border-radius: var(--radius-paper-xs);
+    background-color: color-mix(in oklab, var(--terracotta) 8%, transparent);
+    color: light-dark(var(--terracotta), #b83818);
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-caps);
+    line-height: 1;
+    text-transform: uppercase;
+    box-shadow: var(--shadow-paper-xs);
+  }
+
+  /* Marcas de registro arquitectónicas en esquinas (corner plus/tick marks) */
+  .corner-marks {
+    position: relative;
+  }
+  .corner-marks::before,
+  .corner-marks::after {
+    content: "";
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    pointer-events: none;
+    border-color: var(--border-strong-base);
+  }
+  .corner-marks::before {
+    top: -1px;
+    left: -1px;
+    border-top: 1.5px solid;
+    border-left: 1.5px solid;
+  }
+  .corner-marks::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 1.5px solid;
+    border-right: 1.5px solid;
+  }
+}

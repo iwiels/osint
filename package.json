@@ -15,9 +15,15 @@
     "test": "npm run test --workspace packages/sdk",
     "lint": "node scripts/run-python.js -m ruff check engine/ tests/ && node scripts/run-python.js -m ruff format --check engine/ tests/",
     "test:py": "node scripts/run-python.js -m pytest tests/ -q",
-    "verify": "npm run lint && npm run test:py && npm run typecheck && npm test && npm run build",
-    "engine:serve": "python -m engine.http_server --port 8787",
-    "dist:win": "npm run build && npm run dist --workspace desktop",
+    "verify": "npm run lint && npm run test:py && npm run gen:sdk:check && npm run a11y:contrast && npm run typecheck && npm test && npm run build",
+    "a11y:contrast": "node scripts/a11y-contrast.mjs",
+    "engine:serve": "node scripts/run-python.js -m engine.http_server --port 8787",
+    "engine:build": "node scripts/run-python.js scripts/build-engine.py",
+    "engine:build:dry": "node scripts/run-python.js scripts/build-engine.py --dry-run",
+    "gen:sdk": "node scripts/run-python.js scripts/gen_sdk_types.py",
+    "gen:sdk:check": "node scripts/run-python.js scripts/gen_sdk_types.py --check",
+    "smoke:engine": "node scripts/run-python.js scripts/smoke_http.py",
+    "dist:win": "npm run engine:build && npm run build && npm run dist --workspace desktop",
     "postinstall": "node scripts/postinstall.js"
   },
   "devDependencies": {

@@ -1,0 +1,105 @@
+/* ============================================================
+   SpecterOSINT — Animaciones
+   ------------------------------------------------------------
+   Sólo movimiento con función: entrada de contenido nuevo, indicadores de
+   actividad y despliegue de acordeones. Todo respeta prefers-reduced-motion
+   (base.css lo neutraliza globalmente).
+   ============================================================ */
+
+@layer utilities {
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.85);
+    }
+  }
+
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+      opacity: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+      opacity: 1;
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+      opacity: 1;
+    }
+    to {
+      height: 0;
+      opacity: 0;
+    }
+  }
+
+  /* Compatibilidad con las clases que ya usa el renderer. */
+  .anim-rise {
+    animation: rise var(--duration-slow) var(--ease-standard) both;
+  }
+  .anim-dot-live {
+    animation: pulse-dot 2.2s ease-in-out infinite;
+  }
+  .anim-blink {
+    animation: blink 1.1s ease-in-out infinite;
+  }
+
+  /* Esqueleto de carga (resultados del agente, tablas). */
+  .anim-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--surface-base-hover) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  /* Radix monta el contenido del acordeón con altura variable: estas clases
+     evitan el salto del primer frame. */
+  .accordion-content[data-state="open"] {
+    animation: accordion-down var(--duration-base) var(--ease-standard);
+  }
+  .accordion-content[data-state="closed"] {
+    animation: accordion-up var(--duration-base) var(--ease-standard);
+  }
+}

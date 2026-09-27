@@ -1,0 +1,218 @@
+@layer components {
+  [data-component="sidebar"] {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    width: 268px;
+    /* Ventana estrecha: el raíl cede ancho al expediente antes de plegarse. */
+    max-width: 38vw;
+    border-right: 1px solid var(--border-weak-base);
+    background-color: var(--surface-raised-base);
+
+    [data-slot="sidebar-header"] {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      height: 40px;
+      flex-shrink: 0;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border-weak-base);
+    }
+
+    [data-slot="sidebar-list"] {
+      flex: 1;
+      min-height: 0;
+      margin: 0;
+      padding: 8px;
+      list-style: none;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    [data-slot="sidebar-empty"] {
+      padding: 24px 12px;
+      text-align: center;
+      color: var(--text-weak);
+      font-size: var(--font-size-small);
+      line-height: var(--line-height-x-large);
+    }
+
+    /* Fila de expediente: el estado activo se comunica por atributo, no por
+       concatenación de clases en el JSX. */
+    [data-slot="case-row-wrap"] {
+      display: flex;
+      align-items: stretch;
+      gap: 4px;
+      margin-bottom: 2px;
+
+      > [data-component="case-row"] {
+        min-width: 0;
+        flex: 1;
+      }
+      /* Papelera siempre visible pero tenue (Claude: acciones al hover, pero
+         descubribles); al armar, rojo inequívoco. Nunca opacity:0 total. */
+      > [data-component="icon-button"] {
+        flex-shrink: 0;
+        align-self: center;
+        opacity: 0.45;
+      }
+      &:hover > [data-component="icon-button"],
+      &:focus-within > [data-component="icon-button"] {
+        opacity: 1;
+      }
+      > [data-component="icon-button"][data-state="armed"] {
+        opacity: 1;
+        color: var(--text-critical);
+        border-color: var(--border-critical-base);
+        background-color: var(--surface-critical-weak);
+      }
+    }
+
+    [data-slot="sidebar-error"] {
+      margin: 4px 8px 0;
+      padding: 6px 8px;
+      border: 1px solid var(--border-critical-base);
+      background-color: var(--surface-critical-weak);
+      color: var(--text-critical);
+      font-size: var(--font-size-small);
+    }
+
+    [data-slot="sidebar-sessions"] {
+      border-top: 1px solid var(--border-weak-base);
+      margin-top: 4px;
+      flex-shrink: 0;
+      max-height: 42%;
+      overflow-y: auto;
+    }
+
+    [data-component="case-row"] {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      background-color: transparent;
+      text-align: left;
+      cursor: default;
+      transition:
+        background-color var(--duration-base) var(--ease-standard),
+        border-color var(--duration-base) var(--ease-standard),
+        box-shadow var(--duration-base) var(--ease-standard),
+        transform var(--duration-fast) var(--ease-standard);
+
+      /* Archive case row: hard paper shadow on hover */
+      &:hover {
+        border-color: var(--border-weak-base);
+        background-color: var(--surface-raised-strong);
+        box-shadow: var(--shadow-paper-xs);
+        transform: translateY(-0.5px);
+      }
+      &:focus-visible {
+        box-shadow: var(--shadow-xs-border-focus);
+        outline: none;
+      }
+
+      /* Active case row: crisp folder tab indicator & hard paper shadow */
+      &[data-state="active"] {
+        border-color: var(--border-base);
+        background-color: var(--surface-raised-strong-hover);
+        box-shadow: var(--shadow-paper-sm);
+
+        /* Crisp folder spine tab indicator */
+        &::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 4px;
+          bottom: 4px;
+          width: 3px;
+          border-radius: 1px;
+          background: var(--brand);
+        }
+
+        /* Dossier tab accent on top edge */
+        &::after {
+          content: "";
+          position: absolute;
+          top: -1px;
+          left: 14px;
+          width: 36px;
+          height: 2px;
+          background: var(--brand);
+          border-radius: 1px 1px 0 0;
+        }
+      }
+
+      /* Physical docket stamp badge for case index */
+      [data-slot="case-index"] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 24px;
+        height: 24px;
+        border: 1px solid var(--border-weak-base);
+        border-radius: var(--radius-xs);
+        background-color: var(--surface-inset-base);
+        color: var(--text-weaker);
+        font-family: var(--font-family-mono);
+        font-size: 11px;
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+        box-shadow: 1px 1px 0px 0px light-dark(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.06));
+        transition: border-color var(--duration-base), color var(--duration-base), box-shadow var(--duration-base);
+      }
+      &:hover [data-slot="case-index"] {
+        border-color: var(--border-strong-base);
+        color: var(--text-base);
+      }
+      &[data-state="active"] [data-slot="case-index"] {
+        border-color: var(--border-brand-base);
+        background-color: var(--surface-brand-weak);
+        color: var(--text-brand);
+        box-shadow: 1px 1px 0px 0px light-dark(rgba(236, 99, 61, 0.4), rgba(190, 60, 24, 0.25));
+      }
+
+      [data-slot="case-name"] {
+        display: block;
+        overflow: hidden;
+        color: var(--text-base);
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-medium);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      &:hover [data-slot="case-name"],
+      &[data-state="active"] [data-slot="case-name"] {
+        color: var(--text-strong);
+      }
+
+      [data-slot="case-meta"] {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 4px;
+        color: var(--text-weaker);
+        font-family: var(--font-family-mono);
+        font-size: var(--font-size-x-small);
+      }
+      [data-slot="case-meta"] > [data-slot="case-id"] {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        opacity: 0.8;
+      }
+      [data-slot="case-meta"] > [data-slot="case-date"] {
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+    }
+  }
+}

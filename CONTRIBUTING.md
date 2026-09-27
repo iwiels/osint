@@ -23,7 +23,7 @@ Un PR se considera listo cuando **todo** esto pasa en local:
 |---|---|---|
 | Lint Python | `ruff check engine/ tests/` | job `engine` |
 | Formato Python | `ruff format --check engine/ tests/` | job `engine` |
-| Tests + cobertura ≥ 55% | `pytest tests/ -q` | job `engine` |
+| Tests + cobertura ≥ 80% | `pytest tests/ -q` | job `engine` |
 | Typecheck TS | `npm run typecheck` | job `web` |
 | Tests SDK + cobertura | `npm test` | job `web` |
 | Build producción | `npm run build` | job `web` |

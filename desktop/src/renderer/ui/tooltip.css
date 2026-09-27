@@ -1,0 +1,20 @@
+@layer components {
+  [data-component="tooltip"] {
+    z-index: 90;
+    max-width: 320px;
+    padding: 5px 8px;
+    border: 1px solid var(--border-weak-base);
+    border-radius: var(--radius-md);
+    background-color: var(--surface-float-base);
+    box-shadow: var(--shadow-md);
+    color: var(--text-base);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-x-small);
+    line-height: var(--line-height-large);
+    animation: rise 100ms var(--ease-standard) both;
+
+    [data-slot="tooltip-arrow"] {
+      fill: var(--surface-float-base);
+    }
+  }
+}

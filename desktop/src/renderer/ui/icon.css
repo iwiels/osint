@@ -1,0 +1,48 @@
+@layer components {
+  [data-component="icon"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    aspect-ratio: 1 / 1;
+    color: var(--icon-base);
+
+    &[data-size="small"] {
+      width: 14px;
+      height: 14px;
+    }
+    &[data-size="normal"] {
+      width: 16px;
+      height: 16px;
+    }
+    &[data-size="medium"] {
+      width: 20px;
+      height: 20px;
+    }
+
+    &[data-tone="strong"] {
+      color: var(--icon-strong-base);
+    }
+    &[data-tone="weak"] {
+      color: var(--icon-weak-base);
+    }
+    &[data-tone="brand"] {
+      color: var(--icon-brand-base);
+    }
+    &[data-tone="success"] {
+      color: var(--icon-success-base);
+    }
+    &[data-tone="warning"] {
+      color: var(--icon-warning-base);
+    }
+    &[data-tone="critical"] {
+      color: var(--icon-critical-base);
+    }
+
+    [data-slot="icon-svg"] {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  }
+}

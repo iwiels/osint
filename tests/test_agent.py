@@ -90,3 +90,28 @@ async def _resolve(req: PermissionRequest, decision: str) -> str:
     req.future = loop.create_future()
     assert respond_permission(req.request_id, decision) is True
     return await asyncio.wait_for(req.future, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_request_run_cancel_marca_runs_y_libera_permisos() -> None:
+    """El botón Detener: marca el run y resuelve esperas de permiso como denegadas."""
+    import asyncio
+
+    from engine import agent
+
+    loop = asyncio.get_running_loop()
+    req = PermissionRequest(
+        request_id="pc", tool_name="investigate_domain", arguments={}, session_id="sc"
+    )
+    req.future = loop.create_future()
+    agent._pending_permissions["pc"] = req
+    agent._active_runs["run-x"] = "sc"
+    try:
+        assert agent.request_run_cancel("sc") == 1
+        assert "run-x" in agent._cancel_requests
+        assert await asyncio.wait_for(req.future, timeout=1) == "denied"
+        assert agent.request_run_cancel("otra-sesion") == 0
+    finally:
+        agent._pending_permissions.pop("pc", None)
+        agent._active_runs.pop("run-x", None)
+        agent._cancel_requests.discard("run-x")

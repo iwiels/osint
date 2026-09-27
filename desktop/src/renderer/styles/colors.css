@@ -1,0 +1,304 @@
+/* ============================================================
+   SpecterOSINT — Colores
+   ------------------------------------------------------------
+   Estructura portada de opencode (packages/ui/src/styles/colors.css):
+     1) escala primitiva (grises 1-12 + alfas de overlay)
+     2) tokens semánticos por rol (background/surface/text/icon/border/...)
+     3) alias de compatibilidad de la etapa anterior (se borran al
+        terminar la migración de los componentes grandes)
+
+   Oscuro por defecto; `light-dark()` resuelve cada token según el
+   `color-scheme` efectivo, que se fija en `:root` y puede cambiarse en
+   caliente con <html data-color-scheme="light|dark">.
+   ============================================================ */
+
+/* ---- 1. Primitivas ------------------------------------------------ */
+
+:root {
+  /* Gris oscuro (neutro frío: carbón azulado de Specter, sin tinte) */
+  --gray-dark-1: #0c0e12;
+  --gray-dark-2: #12151a;
+  --gray-dark-3: #181c22;
+  --gray-dark-4: #1e2229;
+  --gray-dark-5: #242830;
+  --gray-dark-6: #2b3038;
+  --gray-dark-7: #353b45;
+  --gray-dark-8: #464d59;
+  --gray-dark-9: #5b6371;
+  --gray-dark-10: #6e7684;
+  --gray-dark-11: #a4acba;
+  --gray-dark-12: #e8ebf0;
+
+  /* Gris claro (escala cálida "papel" illoca: crema, arena, lino) */
+  --gray-light-1: #fdf8f0;
+  --gray-light-2: #faf4e8;
+  --gray-light-3: #f4ecdb;
+  --gray-light-4: #eadfc9;
+  --gray-light-5: #e2d2b3;
+  --gray-light-6: #d5c097;
+  --gray-light-7: #c2b192;
+  --gray-light-8: #a89a83;
+  --gray-light-9: #857862;
+  --gray-light-10: #6f6656;
+  --gray-light-11: #57503f;
+  --gray-light-12: #373737;
+
+  /* Alfas de overlay (hover/activo sobre cualquier superficie) */
+  --alpha-dark-1: rgb(255 255 255 / 0);
+  --alpha-dark-2: rgb(255 255 255 / 0.02);
+  --alpha-dark-3: rgb(255 255 255 / 0.04);
+  --alpha-dark-4: rgb(255 255 255 / 0.06);
+  --alpha-dark-5: rgb(255 255 255 / 0.08);
+  --alpha-dark-6: rgb(255 255 255 / 0.11);
+  --alpha-dark-7: rgb(255 255 255 / 0.15);
+  --alpha-dark-8: rgb(255 255 255 / 0.22);
+  --alpha-dark-9: rgb(255 255 255 / 0.36);
+  --alpha-dark-10: rgb(255 255 255 / 0.44);
+  --alpha-dark-11: rgb(255 255 255 / 0.62);
+  --alpha-dark-12: rgb(255 255 255 / 0.92);
+
+  --alpha-light-1: rgb(0 0 0 / 0.01);
+  --alpha-light-2: rgb(0 0 0 / 0.02);
+  --alpha-light-3: rgb(0 0 0 / 0.03);
+  --alpha-light-4: rgb(0 0 0 / 0.05);
+  --alpha-light-5: rgb(0 0 0 / 0.07);
+  --alpha-light-6: rgb(0 0 0 / 0.09);
+  --alpha-light-7: rgb(0 0 0 / 0.12);
+  --alpha-light-8: rgb(0 0 0 / 0.18);
+  --alpha-light-9: rgb(0 0 0 / 0.3);
+  --alpha-light-10: rgb(0 0 0 / 0.4);
+  --alpha-light-11: rgb(0 0 0 / 0.56);
+  --alpha-light-12: rgb(0 0 0 / 0.87);
+
+  /* Primitivas de delineado técnico Illoca (architectural drafting) */
+  --blueprint-base: #0b111e;
+  --blueprint-surface: #131b2e;
+  --blueprint-panel: #1a243c;
+  --blueprint-raised: #223050;
+
+  --paper-cream: #fffbf3;
+  --paper-manila: #f6edda;
+  --paper-craft: #eadfc9;
+  --paper-folder: #d5c097;
+
+  --terracotta: #ec633d;
+  --redline: #e76051;
+
+  --blueprint-cobalt: #3b60c5;
+  --blueprint-navy: #283f7d;
+
+  /* Marca y estados (Illoca Terracotta Orange / Drafting Palette) */
+  --brand: #ec633d;
+  --brand-hover: #d9522c;
+  --brand-active: #c4431e;
+  --success: #2ebd85;
+  --warning: #fbbf24;
+  --critical: #f87171;
+  --info: #c084fc;
+
+  /* Tipos de entidad del grafo (data-viz sobre lienzo oscuro) */
+  --graph-domain: #38bdf8;
+  --graph-subdomain: #7dd3fc;
+  --graph-ip: #c084fc;
+  --graph-person: #f472b6;
+  --graph-email: #fbbf24;
+  --graph-social: #34d399;
+  --graph-file: #facc15;
+  --graph-geo: #4ade80;
+  --graph-org: #fb923c;
+  --graph-alias: #94a3b8;
+  --graph-phone: #38bdf8;
+}
+
+/* Esquema de color del documento: oscuro salvo preferencia explícita. */
+:root {
+  color-scheme: dark;
+}
+:root[data-color-scheme="light"] {
+  color-scheme: light;
+}
+:root[data-color-scheme="dark"] {
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-color-scheme]) {
+    color-scheme: light;
+  }
+}
+
+/* ---- 2. Tokens semánticos ------------------------------------------ */
+
+:root {
+  /* Fondos: base (página) → stronger (paneles elevados) */
+  --background-base: light-dark(var(--gray-dark-1), var(--gray-light-1));
+  --background-weak: light-dark(var(--gray-dark-2), var(--gray-light-2));
+  --background-strong: light-dark(var(--gray-dark-3), var(--gray-light-3));
+  --background-stronger: light-dark(var(--gray-dark-4), var(--gray-light-4));
+
+  /* Superficies hundidas (inputs, tablas, barras de estado) */
+  --surface-inset-base: light-dark(var(--gray-dark-2), var(--gray-light-3));
+  --surface-inset-hover: light-dark(var(--gray-dark-3), var(--gray-light-4));
+  --surface-inset-strong: light-dark(var(--gray-dark-4), var(--gray-light-5));
+
+  /* Superficies elevadas (paneles, tarjetas, popovers) */
+  --surface-raised-base: light-dark(var(--gray-dark-2), var(--gray-light-1));
+  --surface-raised-base-hover: light-dark(var(--gray-dark-3), var(--gray-light-2));
+  --surface-raised-base-active: light-dark(var(--gray-dark-4), var(--gray-light-3));
+  --surface-raised-strong: light-dark(var(--gray-dark-3), var(--gray-light-2));
+  --surface-raised-strong-hover: light-dark(var(--gray-dark-4), var(--gray-light-3));
+  --surface-raised-stronger: light-dark(var(--gray-dark-4), var(--gray-light-1));
+  --surface-raised-stronger-hover: light-dark(var(--gray-dark-5), var(--gray-light-2));
+  --surface-raised-stronger-non-alpha: light-dark(var(--gray-dark-3), var(--gray-light-1));
+
+  /* Superficies flotantes (menús, tooltips, diálogos) */
+  --surface-float-base: light-dark(var(--gray-dark-5), var(--gray-light-1));
+  --surface-float-base-hover: light-dark(var(--gray-dark-6), var(--gray-light-2));
+
+  --surface-weak: light-dark(var(--gray-dark-2), var(--gray-light-2));
+  --surface-strong: light-dark(var(--gray-dark-4), var(--gray-light-4));
+  --surface-disabled: light-dark(var(--gray-dark-3), var(--gray-light-3));
+
+  /* Overlays para interacción sobre cualquier superficie */
+  --surface-base-hover: light-dark(var(--alpha-dark-3), var(--alpha-light-3));
+  --surface-base-active: light-dark(var(--alpha-dark-5), var(--alpha-light-5));
+  --surface-interactive-base: light-dark(var(--gray-dark-3), var(--gray-light-3));
+  --surface-interactive-hover: light-dark(var(--gray-dark-4), var(--gray-light-4));
+  --surface-interactive-weak: light-dark(var(--alpha-dark-2), var(--alpha-light-2));
+  --surface-interactive-weak-hover: light-dark(var(--alpha-dark-4), var(--alpha-light-4));
+
+  /* Marca */
+  --surface-brand-base: var(--brand);
+  --surface-brand-hover: color-mix(in oklab, var(--brand) 86%, white);
+  --surface-brand-weak: color-mix(in oklab, var(--brand) 14%, transparent);
+  --surface-brand-weak-hover: color-mix(in oklab, var(--brand) 22%, transparent);
+
+  /* Estados */
+  --surface-success-base: color-mix(in oklab, var(--success) 16%, transparent);
+  --surface-success-weak: color-mix(in oklab, var(--success) 9%, transparent);
+  --surface-warning-base: color-mix(in oklab, var(--warning) 16%, transparent);
+  --surface-warning-weak: color-mix(in oklab, var(--warning) 9%, transparent);
+  --surface-critical-base: color-mix(in oklab, var(--critical) 16%, transparent);
+  --surface-critical-weak: color-mix(in oklab, var(--critical) 9%, transparent);
+  --surface-info-base: color-mix(in oklab, var(--info) 16%, transparent);
+  --surface-info-weak: color-mix(in oklab, var(--info) 9%, transparent);
+
+  /* Texto -------------------------------------------------------------
+     Los cuatro escalones cumplen WCAG 2.2 AA (≥4.5:1) sobre la superficie
+     MÁS CLARA donde pueden aparecer (--surface-float-base), no sólo sobre el
+     fondo de la app. Los ratios van anotados y se verifican con
+     `scripts/a11y-contrast.mjs`.                                        */
+  --text-strong: light-dark(#e8ebf0, #373737); /* 15.9:1 / 11.3:1 */
+  --text-base: light-dark(#a4acba, #636363); /* 7.4:1 / 5.7:1 */
+  --text-weak: light-dark(#9aa3b2, #6f6a5c); /* 5.2:1 / 5.1:1 */
+  --text-weaker: light-dark(#8b93a2, #655e4f); /* 4.5:1 / 6.1:1 */
+  --text-invert: light-dark(#0c0e12, #fdf8f0);
+  /* Colores semánticos de texto: en claro se usa el índigo institucional y
+     variantes oscuras de cada matiz para no caer por debajo de 4.5:1. */
+  --text-success: light-dark(#34d399, #047857);
+  --text-warning: light-dark(#fbbf24, #92400e);
+  --text-critical: light-dark(#f87171, #b91c1c);
+  --text-info: light-dark(#c084fc, #7e22ce);
+  --text-brand: light-dark(#ff7b57, #b83818);
+
+  /* Delineado arquitectónico (Illoca drafting semantic tokens) */
+  --text-draft-terracotta: light-dark(#ff7b57, #b83818);
+  --text-draft-cobalt: light-dark(#7ba2ff, var(--blueprint-navy));
+  --surface-draft-paper: light-dark(var(--blueprint-surface), var(--paper-cream));
+  --surface-draft-panel: light-dark(var(--blueprint-panel), var(--paper-manila));
+  --border-draft-redline: var(--redline);
+  --border-draft-terracotta: var(--terracotta);
+
+  /* Iconografía (≥3:1 como elemento gráfico, WCAG 1.4.11) */
+  --icon-base: light-dark(#a4acba, #636363);
+  --icon-weak-base: light-dark(var(--gray-dark-10), var(--gray-light-10));
+  --icon-strong-base: light-dark(var(--gray-dark-12), var(--gray-light-12));
+  --icon-strong-hover: light-dark(var(--gray-light-1), var(--gray-dark-1));
+  --icon-strong-focus: light-dark(var(--gray-light-2), var(--gray-dark-2));
+  --icon-strong-active: light-dark(var(--gray-light-3), var(--gray-dark-2));
+  --icon-strong-disabled: light-dark(var(--gray-dark-7), var(--gray-light-6));
+  --icon-invert-base: light-dark(var(--gray-dark-1), var(--gray-light-1));
+  --icon-disabled: light-dark(var(--gray-dark-8), var(--gray-light-7));
+  --icon-brand-base: var(--brand);
+  --icon-success-base: var(--success);
+  --icon-warning-base: var(--warning);
+  --icon-critical-base: var(--critical);
+  --icon-info-base: var(--info);
+  --icon-draft-terracotta: var(--terracotta);
+  --icon-draft-cobalt: light-dark(#6085ee, var(--blueprint-cobalt));
+
+  /* Bordes */
+  --border-weak-base: light-dark(var(--gray-dark-6), var(--gray-light-6));
+  --border-base: light-dark(var(--gray-dark-7), var(--gray-light-7));
+  --border-strong-base: light-dark(var(--gray-dark-8), var(--gray-light-8));
+  --border-disabled: light-dark(var(--gray-dark-5), var(--gray-light-5));
+  --border-brand-base: var(--brand);
+  --border-critical-base: color-mix(in oklab, var(--critical) 45%, transparent);
+  --border-warning-base: color-mix(in oklab, var(--warning) 45%, transparent);
+  --border-success-base: color-mix(in oklab, var(--success) 45%, transparent);
+
+  /* Botones */
+  /* Terracota arquitectónico: blanco sobre #be3c18 ≈ 4.88:1, negro sobre #ec633d ≈ 5.33:1 */
+  --button-primary-base: light-dark(var(--brand), #be3c18);
+  --button-primary-hover: light-dark(
+    color-mix(in oklab, var(--brand) 86%, white),
+    #a33213
+  );
+  --button-primary-disabled: light-dark(var(--gray-dark-5), var(--gray-light-5));
+  --button-secondary-base: light-dark(var(--gray-dark-3), var(--gray-light-2));
+  --button-secondary-hover: light-dark(var(--gray-dark-4), var(--gray-light-3));
+  --button-ghost-hover: light-dark(var(--alpha-dark-4), var(--alpha-light-4));
+
+  /* Campos de entrada ---------------------------------------------------
+     El borde es la única señal del control, así que cumple contraste de
+     componente no textual (WCAG 1.4.11, ≥3:1) contra su propio fondo.   */
+  --input-base: light-dark(var(--gray-dark-2), var(--gray-light-1));
+  --input-hover: light-dark(var(--gray-dark-3), var(--gray-light-2));
+  --input-focus: light-dark(var(--gray-dark-3), var(--gray-light-1));
+  --input-border-base: light-dark(#6a7382, #857862); /* 3.4:1 / 4.1:1 */
+  --input-border-hover: light-dark(#828b99, #6f6656);
+  --input-border-focus: light-dark(var(--brand), #be3c18);
+  --input-placeholder: light-dark(#8b93a2, #6f6a5c); /* 4.5:1 / 5.1:1 */
+
+  /* Anillos de foco (accesibilidad teclado) ----------------------------
+     Sólidos: el foco debe verse sobre cualquier superficie y también en modo
+     de alto contraste de Windows (ver base.css, @media forced-colors).   */
+  --focus-ring-color: light-dark(var(--brand), #be3c18);
+  --focus-ring: 0 0 0 2px var(--focus-ring-color);
+  --focus-ring-critical: 0 0 0 2px light-dark(var(--critical), #b91c1c);
+  --selection-background: color-mix(in oklab, var(--brand) 30%, transparent);
+}
+
+/* ---- 3. Compatibilidad: nombres anteriores -------------------------
+   Mantienen funcionando App/AgentConsole/CaseView/DockPrompt mientras se
+   migran a la capa ui/. Cuando esos archivos usen sólo tokens semánticos,
+   este bloque se elimina.                                      ---- */
+
+:root {
+  --abyss: var(--background-base);
+  --surface-0: var(--background-base);
+  --surface-1: var(--surface-raised-base);
+  --surface-2: var(--surface-raised-strong);
+  --surface-3: var(--surface-raised-stronger);
+  --hairline: var(--border-weak-base);
+  --hairline-strong: var(--border-strong-base);
+  --ink: var(--text-strong);
+  --ink-dim: var(--text-base);
+  --ink-faint: var(--text-weak);
+  --accent: var(--brand);
+  --signal: var(--success);
+  --warn: var(--warning);
+  --danger: var(--critical);
+  --violet: var(--info);
+
+  --ent-domain: var(--graph-domain);
+  --ent-subdomain: var(--graph-subdomain);
+  --ent-ip: var(--graph-ip);
+  --ent-person: var(--graph-person);
+  --ent-email: var(--graph-email);
+  --ent-social: var(--graph-social);
+  --ent-file: var(--graph-file);
+  --ent-geo: var(--graph-geo);
+  --ent-org: var(--graph-org);
+  --ent-alias: var(--graph-alias);
+  --ent-phone: var(--graph-phone);
+}

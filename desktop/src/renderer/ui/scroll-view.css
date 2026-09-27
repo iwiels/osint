@@ -1,0 +1,28 @@
+@layer components {
+  [data-component="scroll-view"] {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    flex: 1;
+
+    [data-slot="scroll-view-viewport"] {
+      min-height: 0;
+      min-width: 0;
+      flex: 1;
+      overscroll-behavior: contain;
+    }
+
+    [data-slot="scroll-view-viewport"][data-direction="vertical"] {
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    [data-slot="scroll-view-viewport"][data-direction="horizontal"] {
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+    [data-slot="scroll-view-viewport"][data-direction="both"] {
+      overflow: auto;
+    }
+  }
+}

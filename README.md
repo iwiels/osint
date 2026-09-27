@@ -4,7 +4,7 @@
 > Motor Python headless + consola Electron instalable (.exe), con cadena de custodia
 > criptográfica, grafo de conocimiento y agente investigador IA multi-provider.
 
-[![tests](https://img.shields.io/badge/tests-9%2F9-brightgreen)]() [![license](https://img.shields.io/badge/license-MIT-blue)]()
+[![tests](https://img.shields.io/badge/tests-265%2B-brightgreen)]() [![license](https://img.shields.io/badge/license-MIT-blue)]()
 
 ## Qué es
 
@@ -12,7 +12,7 @@ SpecterOSINT dejó de ser una capa que depende de OpenCode: ahora es una platafo
 autónoma con su propio motor y su propia interfaz desktop, al estilo Claude Desktop,
 Antigravity u otras apps Electron profesionales.
 
-- **Motor forense** (Python, headless): 15 herramientas de recolección y análisis —
+- **Motor forense** (Python, headless): 32 herramientas de recolección y análisis —
   DNS/TLS forense, Certificate Transparency, RDAP, huella de identidad en +700
   plataformas (WhatsMyName), forensia de GitHub, caza de documentos y leaks, análisis
   de metadatos de archivos, grafo de conocimiento (NetworkX) y **ledger inmutable
@@ -20,7 +20,8 @@ Antigravity u otras apps Electron profesionales.
 - **Consola desktop** (Electron + React): gestión de casos, visualización del grafo,
   auditoría de cadena de custodia y **consola de agente IA** que orquesta las
   herramientas forenses con approval humana (permission gate).
-- **Multi-provider**: Anthropic, OpenAI, Ollama (local) o cualquier endpoint
+- **Multi-provider**: Anthropic, OpenAI, **OpenCode Zen (modelos free con
+  reintento automático ante rate limit)**, Ollama (local) o cualquier endpoint
   OpenAI-compatible.
 - **Compatibilidad MCP**: las mismas herramientas siguen consumibles desde OpenCode
   u otro cliente MCP por stdio.
@@ -104,7 +105,7 @@ responde con `POST /agent/permissions/respond {request_id, decision}`.
 | `packages/sdk` | `@specter/sdk`, cliente TypeScript tipado (HTTP + SSE) |
 | `desktop/` | App Electron (main / preload / renderer React) |
 | `scripts/` | postinstall, build del engine (PyInstaller), smoke test |
-| `tests/` | Suite pytest del kernel forense |
+| `tests/` | Suite pytest (kernel + agente + contrato HTTP, 27 ficheros) |
 
 ## Scripts
 
@@ -114,6 +115,13 @@ responde con `POST /agent/permissions/respond {request_id, decision}`.
 | `npm run build` | Build de producción de la app |
 | `npm run typecheck` | TypeScript en SDK + desktop |
 | `npm test` | Tests del SDK (vitest) |
+| `npm run lint` | Ruff check + format del engine |
+| `npm run test:py` | Suite pytest del engine |
+| `npm run gen:sdk` / `gen:sdk:check` | Regenera / verifica tipos del SDK desde `/openapi.json` |
+| `npm run a11y:contrast` | Auditoría de contraste WCAG 2.2 AA |
+| `npm run engine:build` | Empaqueta el engine (PyInstaller) |
+| `npm run smoke:engine` | Smoke test E2E del engine HTTP |
+| `npm run verify` | Todo lo anterior en cadena (puerta de release) |
 | `pytest` | Tests del kernel forense |
 | `npm run dist:win` | Instalador Windows (.exe NSIS) |
 | `python -m engine.http_server` | Motor headless standalone |

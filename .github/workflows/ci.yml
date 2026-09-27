@@ -31,8 +31,8 @@ jobs:
       - name: Lint (ruff)
         run: ruff check engine/ tests/
 
-      - name: Tests + coverage gate (55%)
-        # pyproject define pythonpath=[engine] y --cov-fail-under=55
+      - name: Tests + coverage gate (80%)
+        # pyproject define pythonpath=[engine] y --cov-fail-under=80
         run: python -m pytest tests/ -q
 
   web:

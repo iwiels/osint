@@ -62,6 +62,34 @@ describe("connectEvents", () => {
     expect(es.closed).toBe(true);
   });
 
+  it("entrega los eventos del agente de la fase C (token, plan, paralelo)", () => {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+    const onToken = vi.fn();
+    const onPlan = vi.fn();
+    const onParallel = vi.fn();
+
+    const dispose = connectEvents("http://127.0.0.1:8787", {
+      "agent.token": onToken,
+      "agent.plan": onPlan,
+      "agent.tools_parallel": onParallel,
+    });
+    const es = FakeEventSource.instances[0];
+
+    es.emit("agent.token", { delta: "Ana" });
+    es.emit("agent.plan", {
+      steps: [{ step: 1, goal: "Enumerar subdominios", tools: ["enumerate_subdomains"] }],
+      total_steps: 1,
+      source: "planner",
+    });
+    es.emit("agent.tools_parallel", { count: 2, tools: ["list_cases", "correlate_cases"] });
+
+    expect(onToken.mock.calls[0][0]).toEqual({ delta: "Ana" });
+    expect(onPlan.mock.calls[0][0]).toMatchObject({ total_steps: 1 });
+    expect(onParallel.mock.calls[0][0]).toEqual({ count: 2, tools: ["list_cases", "correlate_cases"] });
+
+    dispose();
+  });
+
   it("ignora eventos sin handler y JSON malformado sin lanzar", () => {
     globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
     const handlers: EventHandlers = {};
@@ -74,6 +102,14 @@ describe("connectEvents", () => {
       es.listeners.get("tool.started")?.({ data: "{invalid" } as MessageEvent); // JSON roto
     }).not.toThrow();
 
+    dispose();
+  });
+
+  it("anexa el token como ?token= (EventSource no manda headers)", () => {
+    globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+
+    const dispose = connectEvents("http://127.0.0.1:8787/", {}, "tok-1");
+    expect(FakeEventSource.instances[0].url).toBe("http://127.0.0.1:8787/events?token=tok-1");
     dispose();
   });
 });

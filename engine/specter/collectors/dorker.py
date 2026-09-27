@@ -20,6 +20,14 @@ from specter.osint_core.models import (
     RelationType,
 )
 
+# Documento de identidad ES/LATAM (espejo de specter.triage): un DNI/CUIT/RUT
+# no es un alias y no debe tipificarse como tal en el grafo.
+_DOCUMENT_RE = re.compile(
+    r"^(?:\d{7,8}|\d{8}[A-Z]|[XYZ]\d{7}[A-Z]|\d{2}-?\d{8}-?\d"
+    r"|\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])$",
+    re.IGNORECASE,
+)
+
 
 class DocumentHunter(BaseCollector):
     def __init__(self):
@@ -27,6 +35,10 @@ class DocumentHunter(BaseCollector):
         self.file_forensics = FileForensics()
 
     async def _query_duckduckgo(self, client: httpx.AsyncClient, query: str) -> list[str]:
+        # Nota: este colector NO pasa por el navegador sigiloso (dorker opera
+        # sobre el HTML de DuckDuckGo con su propia lógica de dedupe y
+        # extracción forense); el navegador queda para web_search/web_fetch.
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -76,10 +88,16 @@ class DocumentHunter(BaseCollector):
             "pdf_documents": [],
             "pastes_and_mentions": [],
             "web_mentions": [],
+            "official_mentions": [],
         }
 
-        # Nodo raíz del objetivo (Alias o Dominio)
-        if "." in identifier and not identifier.startswith(" "):
+        # Nodo raíz tipificado: un DNI/CUIT/RUT no es un alias (antes se
+        # registraba como `Alias: @99999999`, ruido en el grafo y en la UI).
+        if _DOCUMENT_RE.match(identifier):
+            root_node = EntityNode.create(
+                EntityType.DOCUMENT_ID, identifier, f"Documento: {identifier}"
+            )
+        elif "." in identifier and not identifier.startswith(" "):
             root_node = EntityNode.create(EntityType.DOMAIN, identifier, f"Domain: {identifier}")
         else:
             root_node = EntityNode.create(EntityType.ALIAS, identifier, f"Alias: @{identifier}")
@@ -95,10 +113,21 @@ class DocumentHunter(BaseCollector):
             )
             # 3. Búsqueda de menciones web generales
             general_urls = await self._query_duckduckgo(client, f'"{identifier}"')
+            # 4. Fuentes oficiales AR para documentos: un DNI suelto rara vez
+            # aparece en PDFs/pastes, pero sí en designaciones, edictos y
+            # causas publicadas (Boletín Oficial, InfoLEG, PJN).
+            official_urls: list[str] = []
+            if root_node.type == EntityType.DOCUMENT_ID:
+                official_urls = await self._query_duckduckgo(
+                    client,
+                    f'"{identifier}" (site:boletinoficial.gob.ar | site:infoleg.gob.ar '
+                    "| site:pjn.gov.ar | site:argentina.gob.ar)",
+                )
 
         intel_report["pdf_documents"] = pdf_urls[:5]
         intel_report["pastes_and_mentions"] = leak_urls[:5]
         intel_report["web_mentions"] = general_urls[:10]
+        intel_report["official_mentions"] = official_urls[:10]
 
         # Procesamiento forense de documentos PDF encontrados
         for pdf_url in pdf_urls[:3]:
@@ -125,8 +154,8 @@ class DocumentHunter(BaseCollector):
             except Exception as e:
                 intel_report[f"error_{pdf_url[:30]}"] = str(e)
 
-        # Vincular menciones web y pastes
-        for mention in (leak_urls + general_urls)[:10]:
+        # Vincular menciones web, pastes y fuentes oficiales
+        for mention in (leak_urls + general_urls + official_urls)[:15]:
             mention_node = EntityNode.create(
                 type=EntityType.SOCIAL_PROFILE
                 if any(s in mention for s in ["github", "reddit", "twitter", "x.com"])
@@ -156,5 +185,6 @@ class DocumentHunter(BaseCollector):
                 "pdfs_discovered": len(pdf_urls),
                 "leaks_discovered": len(leak_urls),
                 "web_mentions_discovered": len(general_urls),
+                "official_mentions_discovered": len(official_urls),
             },
         )

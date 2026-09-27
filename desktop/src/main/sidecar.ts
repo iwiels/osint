@@ -9,6 +9,7 @@ import { spawn, execSync, ChildProcess } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 import http from "node:http";
+import { randomBytes } from "node:crypto";
 
 const ENGINE_PORT = Number(process.env.SPECTER_ENGINE_PORT || 8787);
 const BASE_URL = `http://127.0.0.1:${ENGINE_PORT}`;
@@ -17,6 +18,8 @@ export interface EngineInfo {
   baseUrl: string;
   port: number;
   mode: "dev" | "packaged" | "external";
+  /** Bearer del engine: el renderer lo manda en cada llamada (C1). */
+  token: string;
 }
 
 function probeHealth(timeoutMs: number): Promise<boolean> {
@@ -40,17 +43,30 @@ function delay(ms: number): Promise<void> {
 export class EngineSidecar {
   private child: ChildProcess | null = null;
   private stopping = false;
+  /** Token Bearer del engine: aleatorio por arranque (C1). */
+  readonly token: string =
+    process.env.SPECTER_ENGINE_TOKEN || randomBytes(32).toString("hex");
 
   constructor(private readonly isDev: boolean) {}
 
   async start(): Promise<EngineInfo> {
-    // 1) ¿Engine ya corriendo? (lanzador externo o instancia previa)
-    if (await probeHealth(1500)) {
-      return { baseUrl: BASE_URL, port: ENGINE_PORT, mode: "external" };
-    }
-
+    const info = (mode: EngineInfo["mode"]): EngineInfo => ({
+      baseUrl: BASE_URL,
+      port: ENGINE_PORT,
+      mode,
+      token: this.token,
+    });
+    // En dev el engine SIEMPRE se lanza desde fuente: un ocupante previo
+    // (proceso de ayer, exe viejo) es staleness garantizada. Se mata antes
+    // de arrancar; si no se puede, se falla en voz alta en vez de enganchar
+    // código viejo en modo "external".
     if (this.isDev) {
+      await this.killPortOccupant();
       this.spawnDevEngine();
+    } else if (await probeHealth(1500)) {
+      // 1) ¿Engine ya corriendo? Solo en prod tiene sentido reutilizarlo.
+      // Requiere que el ocupante use el mismo token (SPECTER_ENGINE_TOKEN).
+      return info("external");
     } else {
       this.spawnPackagedEngine();
     }
@@ -59,7 +75,7 @@ export class EngineSidecar {
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
       if (await probeHealth(1000)) {
-        return { baseUrl: BASE_URL, port: ENGINE_PORT, mode: this.isDev ? "dev" : "packaged" };
+        return info(this.isDev ? "dev" : "packaged");
       }
       await delay(600);
     }
@@ -80,6 +96,37 @@ export class EngineSidecar {
       }
     } catch {
       // el proceso ya no existe
+    }
+  }
+
+  /**
+   * Mata al ocupante del puerto (solo dev). Best-effort multiplataforma:
+   * si el puerto sigue ocupado se lanza igual y el health-check dirá la
+   * verdad (o el engine nuevo falla al bindear y se ve el error).
+   */
+  private async killPortOccupant(): Promise<void> {
+    if (!(await probeHealth(800))) return;
+    try {
+      if (process.platform === "win32") {
+        const out = execSync(`netstat -ano | findstr :${ENGINE_PORT}`, {
+          stdio: ["ignore", "pipe", "ignore"],
+        }).toString();
+        const pids = new Set<string>();
+        for (const line of out.split("\n")) {
+          const m = line.match(/LISTENING\s+(\d+)/);
+          if (m) pids.add(m[1]);
+        }
+        for (const pid of pids) {
+          if (Number(pid) !== process.pid) {
+            console.log(`[engine] matando ocupante stale del puerto ${ENGINE_PORT}: pid ${pid}`);
+            execSync(`taskkill /pid ${pid} /T /F`, { stdio: "ignore" });
+          }
+        }
+      } else {
+        execSync(`lsof -ti :${ENGINE_PORT} | xargs kill -9`, { stdio: "ignore" });
+      }
+    } catch {
+      // sin ocupante localizable o sin permisos: el arranque lo dirá
     }
   }
 
@@ -125,6 +172,9 @@ export class EngineSidecar {
           PYTHONPATH: repoRoot,
           SPECTER_DATA_DIR: path.join(repoRoot, "data"),
           SPECTER_REPORTS_DIR: path.join(repoRoot, "reports"),
+          // C1: el engine exige este Bearer en todo salvo /health.
+          SPECTER_ENGINE_TOKEN: this.token,
+          // C4: el gate de permisos es opt-out; el sidecar no lo anula.
         },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
@@ -152,6 +202,8 @@ export class EngineSidecar {
         ...process.env,
         SPECTER_DATA_DIR: path.join(userData, "specter-osint", "data"),
         SPECTER_REPORTS_DIR: path.join(userData, "specter-osint", "reports"),
+        // C1: el engine exige este Bearer en todo salvo /health.
+        SPECTER_ENGINE_TOKEN: this.token,
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,

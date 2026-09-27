@@ -1,0 +1,168 @@
+/* ============================================================
+   SpecterOSINT — Prosa (informes del agente)
+   ------------------------------------------------------------
+   Markdown que devuelve el agente en la consola y en los dossiers.
+   Se usa desde `ReactMarkdown` con la clase `.prose-specter`; en la
+   migración de la consola pasará a `session-ui/markdown` con sus propias
+   reglas por `[data-slot]`.
+   ============================================================ */
+
+@layer components {
+  .prose-specter {
+    color: var(--text-strong);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-x-large);
+    overflow-wrap: anywhere;
+
+    h1,
+    h2,
+    h3 {
+      font-weight: var(--font-weight-semibold);
+      letter-spacing: var(--letter-spacing-tight);
+      color: var(--text-strong);
+      margin: 1.25rem 0 0.5rem;
+    }
+    h1 {
+      font-size: var(--font-size-x-large);
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid var(--border-weak-base);
+    }
+    h2 {
+      font-size: var(--font-size-large);
+      padding-bottom: 0.3rem;
+      border-bottom: 1px solid var(--border-weak-base);
+    }
+    h3 {
+      font-size: var(--font-size-base);
+      color: var(--text-base);
+    }
+    :first-child {
+      margin-top: 0;
+    }
+
+    p {
+      margin: 0.5rem 0;
+    }
+
+    ul,
+    ol {
+      margin: 0.5rem 0;
+      padding-left: 1.15rem;
+      color: var(--text-base);
+    }
+    ul {
+      list-style: disc;
+    }
+    ol {
+      list-style: decimal;
+    }
+    li {
+      margin: 0.15rem 0;
+    }
+    li::marker {
+      color: var(--text-weaker);
+    }
+
+    strong {
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-strong);
+    }
+    em {
+      font-style: italic;
+      color: var(--text-base);
+    }
+
+    /* Subrayado punteado arcilla (firma illoca): puntos de 2px en lugar de
+       línea continua. Decorativo: el color del link ya cumple contraste. */
+    a {
+      color: var(--text-brand);
+      text-decoration: none;
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='2' fill='none' viewBox='0 0 4 2'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23e76051'/%3E%3Ccircle cx='3' cy='1'/%3E%3C/svg%3E");
+      background-size: 0.25rem 0.125rem;
+      background-repeat: repeat-x;
+      background-position: 0 100%;
+      padding-bottom: 2px;
+
+      &:hover {
+        color: var(--surface-brand-hover);
+      }
+    }
+
+    blockquote {
+      margin: 0.6rem 0;
+      padding: 0.35rem 0.75rem;
+      border-left: 2px solid var(--border-brand-base);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      background: var(--surface-brand-weak);
+      color: var(--text-base);
+    }
+
+    code {
+      font-family: var(--font-family-mono);
+      font-variant-numeric: tabular-nums;
+    }
+    :not(pre) > code {
+      padding: 1px 5px;
+      border: 1px solid var(--border-weak-base);
+      border-radius: var(--radius-xs);
+      background: var(--surface-inset-base);
+      font-size: var(--font-size-small);
+      color: var(--text-strong);
+    }
+    pre {
+      margin: 0.6rem 0;
+      padding: 0.75rem;
+      border: 1px solid var(--border-weak-base);
+      border-radius: var(--radius-md);
+      background: var(--background-base);
+      font-size: var(--font-size-small);
+      line-height: var(--line-height-large);
+      overflow-x: auto;
+
+      code {
+        font-size: inherit;
+      }
+    }
+
+    table {
+      width: 100%;
+      margin: 0.75rem 0;
+      border: 1px solid var(--border-weak-base);
+      border-radius: var(--radius-md);
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      font-size: var(--font-size-small);
+    }
+    th {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border-weak-base);
+      background: var(--surface-raised-strong);
+      color: var(--text-weak);
+      font-weight: var(--font-weight-medium);
+      font-size: var(--font-size-x-small);
+      letter-spacing: var(--letter-spacing-caps);
+      text-transform: uppercase;
+      text-align: left;
+    }
+    td {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border-weak-base);
+      color: var(--text-base);
+      vertical-align: top;
+    }
+    tr:last-child td {
+      border-bottom: 0;
+    }
+    tbody tr:nth-child(even) td {
+      background: var(--surface-raised-base);
+    }
+
+    hr {
+      margin: 1rem 0;
+      border: 0;
+      border-top: 1px solid var(--border-weak-base);
+    }
+  }
+}

@@ -1,0 +1,73 @@
+@layer components {
+  [data-component="switch"] {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 18px;
+    padding: 2px;
+    /* Borde de control (≥3:1) y área pulsable ampliada a 24px de alto, sin
+       cambiar el tamaño visual del interruptor (WCAG 2.5.8). */
+    border: 1px solid var(--input-border-base);
+    border-radius: 9999px;
+    background-color: var(--input-base);
+    cursor: default;
+    position: relative;
+    transition:
+      background-color var(--duration-base) var(--ease-standard),
+      border-color var(--duration-base) var(--ease-standard),
+      box-shadow var(--duration-base) var(--ease-standard);
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset: -4px 0;
+    }
+
+    &:hover:not([data-disabled]) {
+      border-color: var(--input-border-hover);
+    }
+    &:focus-visible {
+      box-shadow: var(--shadow-xs-border-focus);
+      outline: none;
+    }
+    &[data-state="checked"] {
+      border-color: var(--border-brand-base);
+      background-color: var(--button-primary-base);
+    }
+    &[data-disabled] {
+      border-color: var(--border-disabled);
+      background-color: var(--surface-disabled);
+    }
+
+    [data-slot="switch-thumb"] {
+      display: block;
+      width: 12px;
+      height: 12px;
+      border-radius: 9999px;
+      background-color: var(--icon-weak-base);
+      transform: translateX(0);
+      transition:
+        transform var(--duration-base) var(--ease-standard),
+        background-color var(--duration-base) var(--ease-standard);
+    }
+    &[data-state="checked"] [data-slot="switch-thumb"] {
+      background-color: var(--text-invert);
+      transform: translateX(12px);
+    }
+  }
+
+  [data-component="switch-field"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: default;
+    color: var(--text-base);
+    font-size: var(--font-size-small);
+    line-height: 1;
+
+    &:hover [data-slot="switch-label"] {
+      color: var(--text-strong);
+    }
+  }
+}

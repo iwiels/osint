@@ -1,0 +1,39 @@
+/* ============================================================
+   SpecterOSINT Desktop — Sistema de estilos (punto de entrada)
+   ------------------------------------------------------------
+   Arquitectura portada de opencode (packages/ui/src/styles/index.css):
+   el orden de capas se declara una sola vez y cada archivo entra en la
+   suya. Tailwind se importa por partes para poder intercalar los tokens
+   del sistema entre el tema y las utilidades.
+
+   Orden: theme → base → components → utilities
+   (los componentes van por debajo de las utilidades: una clase suelta
+   `p-4` debe poder ganarle a la receta de un componente.)
+   ============================================================ */
+
+@layer theme, base, components, utilities;
+
+/* 1. Tema de Tailwind (namespace de tokens por defecto) y utilidades. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* 2. Tokens propios: primitivas de color, semánticos y escala visual. */
+@import "./colors.css" layer(theme);
+@import "./theme.css" layer(theme);
+@import "./illoca.css" layer(theme);
+
+/* 3. Mapeo de tokens a utilidades (`@theme`, sin capa). */
+@import "./tailwind.css";
+
+/* 4. Base de la aplicación y utilidades propias. */
+@import "./base.css" layer(base);
+@import "./utilities.css" layer(utilities);
+@import "./animations.css" layer(utilities);
+
+/* 5. Estilos de componentes (capa `components`). */
+@import "./legacy.css" layer(components);
+@import "./prose.css" layer(components);
+
+/* Archivos a escanear por Tailwind (renderer completo). */
+@source "../";

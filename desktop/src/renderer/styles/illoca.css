@@ -1,0 +1,58 @@
+/* ============================================================
+   SpecterOSINT — Capa de marca "illoca" (referencia, no genérica)
+   ------------------------------------------------------------
+   Extraída del CSS compilado de https://illoca.com (Nuxt/Tailwind v4,
+   entry ~78KB, :root + frecuencia de hex). Es la dirección estética del
+   producto: papel cálido, tinta carbón, índigo profundo, arcilla,
+   radios mínimos, hairlines, cero decoración.
+
+   Esta capa solo declara PRIMITIVAS de marca. Los semánticos del sistema
+   (colors.css) siguen mandando; las reglas de uso están en docs/ui-rules.md
+   y son obligatorias para cada componente nuevo.
+   ============================================================ */
+
+:root {
+  /* Papel y arena (fondos claros cálidos, nunca #fff puro) */
+  --ill-paper: #fdf8f0;
+  --ill-card: #fffbf3;
+  --ill-sand: #eadfc9;
+  --ill-sand-deep: #e2d2b3;
+  --ill-tan: #c2b192;
+
+  /* Tinta (nunca #000 puro) */
+  --ill-ink: #373737;
+  --ill-body: #636363;
+  --ill-muted: #9aa0a6;
+
+  /* Índigo institucional (primario, CTAs serios, sellos) */
+  --ill-indigo: #283f7d;
+  --ill-indigo-deep: #1f396c;
+  --ill-indigo-bright: #3b60c5;
+
+  /* Arcilla (UN solo acento cálido: peligro real, alertas, marca puntual) */
+  --ill-clay: #ec633d;
+  --ill-clay-deep: #e05c3a;
+
+  /* Noche cálida (esquema oscuro: carbón marrón, no azulado) */
+  --ill-night-1: #212121;
+  --ill-night-2: #313131;
+  --ill-line-dark: #424242;
+
+  /* Radios mínimos (2/4/8: casi cuadrado, nada "burbuja") */
+  --ill-r-sm: 2px;
+  --ill-r-md: 4px;
+  --ill-r-lg: 8px;
+
+  /* Tipo: grotesca tight para display, grotesca neutra para cuerpo, mono
+     técnica para datos. (Sus familias comerciales —F37 Analog, Graphik,
+     Geist Mono— no se distribuyen: se aproximan con las pilas del sistema
+     en theme.css. Nada de fuentes decorativas.) */
+  --ill-tracking-display: -0.025em;
+  --ill-tracking-caps: 0.05em;
+  --ill-leading-tight: 1.1;
+  --ill-leading-body: 1.4;
+
+  /* Movimiento: una sola curva, 150ms por defecto. Sin bounces. */
+  --ill-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ill-duration: 150ms;
+}

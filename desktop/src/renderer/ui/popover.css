@@ -1,0 +1,19 @@
+@layer components {
+  [data-component="popover"] {
+    z-index: 60;
+    width: var(--popover-width, 320px);
+    max-width: calc(100vw - 24px);
+    max-height: min(560px, calc(100vh - 80px));
+    padding: 12px;
+    border: 1px solid var(--border-weak-base);
+    border-radius: var(--radius-xl);
+    background-color: var(--surface-raised-stronger);
+    box-shadow: var(--shadow-lg);
+    overflow-y: auto;
+    animation: rise 120ms var(--ease-standard) both;
+
+    &:focus {
+      outline: none;
+    }
+  }
+}

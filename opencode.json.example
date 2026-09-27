@@ -7,12 +7,15 @@
         "command": [
           "uv",
           "--directory",
-          "C:\\Users\\victo\\repos\\osint",
+          "<ABSOLUTE_PATH_TO_THIS_REPO>",
           "run",
           "python",
           "-m",
           "specter.server"
         ],
+        "env": {
+          "PYTHONPATH": "<ABSOLUTE_PATH_TO_THIS_REPO>/engine"
+        },
         "enabled": true
       }
     }

@@ -1,36 +1,129 @@
 /**
- * CaseView - vista del caso activo.
- *  - Grafo de conocimiento (layout radial simple en SVG, sin dependencias)
- *  - Cadena de custodia (ledger inmutable)
- *  - Acciones rápidas (dossier, integridad)
+ * CaseView - vista unificada del expediente activo.
+ *
+ * Integra y coordina las vistas de evidencia modularizadas:
+ *  - Grafo de conocimiento (GraphCanvas con ForceGraph2D, GraphControls y GraphNodeDetail)
+ *  - Timeline forense con histograma temporal y alertas de ráfagas (TimelineView)
+ *  - Correlaciones y candidatos de resolución de identidad (CorrelationsView)
+ *  - Cadena de custodia HMAC-SHA256 y atestaciones criptográficas (LedgerTable)
+ *
+ * Admite tanto el modo de navegación completa por pestañas internas como el
+ * renderizado directo de una pestaña específica (prop `tab`), permitiendo
+ * incrustación modular en el tab bar central o en paneles laterales.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import type { SpecterClient, EntityNode, LedgerBlock } from "@specter/sdk";
+import {
+  useEffect,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
+import type { SpecterClient } from "@specter/sdk";
 import { useStore } from "../store";
+import {
+  CorrelationsView,
+  EmptyState,
+  GraphCanvas,
+  LedgerTable,
+  TimelineView,
+  type CaseViewTab,
+} from "./evidence";
 
-export default function CaseView({ client }: { client: SpecterClient }) {
-  const activeCaseId = useStore((s) => s.activeCaseId)!;
+export type { CaseViewTab };
+export {
+  CorrelationsView,
+  EmptyState,
+  GraphCanvas,
+  GraphControls,
+  GraphNodeDetail,
+  LedgerTable,
+  TimelineView,
+} from "./evidence";
+
+export interface CaseViewProps {
+  client: SpecterClient;
+  caseId?: string;
+  tab?: CaseViewTab;
+  onTabChange?: (tab: CaseViewTab) => void;
+  hideHeader?: boolean;
+  /** Oculta los tabs locales cuando la navegación principal se gestiona en la cabecera global. */
+  hideTabs?: boolean;
+  className?: string;
+}
+
+const TABS: Array<{ id: CaseViewTab; label: string }> = [
+  { id: "graph", label: "Grafo" },
+  { id: "timeline", label: "Timeline" },
+  { id: "correlations", label: "Correl." },
+  { id: "ledger", label: "Custodia" },
+];
+
+const STATUS_DOT: Record<string, string> = {
+  SEALED: "bg-success",
+  PARTIAL: "bg-warning",
+  UNSIGNED: "bg-warning",
+  INVALID: "bg-critical",
+  KEY_UNAVAILABLE: "bg-surface-disabled",
+};
+
+export default function CaseView({
+  client,
+  caseId: propCaseId,
+  tab: controlledTab,
+  onTabChange,
+  hideHeader = false,
+  hideTabs = false,
+  className = "",
+}: CaseViewProps) {
+  const storeCaseId = useStore((s) => s.activeCaseId);
+  const activeCaseId = propCaseId ?? storeCaseId ?? "";
+
   const graph = useStore((s) => s.graph);
-  const setGraph = useStore((s) => s.setGraph);
   const ledger = useStore((s) => s.ledger);
-  const setLedger = useStore((s) => s.setLedger);
-  const [tab, setTab] = useState<"graph" | "ledger">("graph");
+  const timeline = useStore((s) => s.timeline);
+  const correlations = useStore((s) => s.correlations);
+  const attestation = useStore((s) => s.attestation);
+
+  const [internalTab, setInternalTab] = useState<CaseViewTab>(controlledTab ?? "graph");
   const [busy, setBusy] = useState(false);
 
+  // El tab controlado viene de la nav global: si trae un id ajeno (p.ej. "chat"),
+  // se cae a grafo en vez de pintar un panel vacío.
+  const activeTab: CaseViewTab =
+    controlledTab && (TABS as Array<{ id: CaseViewTab }>).some((t) => t.id === controlledTab)
+      ? controlledTab
+      : internalTab;
+
+  const handleTabChange = (next: CaseViewTab) => {
+    setInternalTab(next);
+    onTabChange?.(next);
+  };
+
+  const load = async (cid: string) => {
+    if (!cid) return;
+    const [g, l, t, c] = await Promise.all([
+      client.caseGraph(cid, { maxDepth: 5 }),
+      client.caseLedger(cid),
+      client.caseTimeline(cid, "day"),
+      client.caseCorrelations(cid),
+    ]);
+    const store = useStore.getState();
+    store.setGraph(g);
+    store.setLedger(l);
+    store.setTimeline(t);
+    store.setCorrelations(c);
+    store.setAttestation(null);
+  };
+
   useEffect(() => {
+    if (!activeCaseId) return;
     let cancelled = false;
     (async () => {
       setBusy(true);
       try {
-        const [g, l] = await Promise.all([
-          client.caseGraph(activeCaseId, { maxDepth: 5 }),
-          client.caseLedger(activeCaseId),
-        ]);
-        if (!cancelled) {
-          setGraph(g);
-          setLedger(l.blocks);
-        }
+        await load(activeCaseId);
+      } catch (err) {
+        if (!cancelled) console.warn("[specter] error cargando el caso:", err);
       } finally {
         if (!cancelled) setBusy(false);
       }
@@ -38,176 +131,170 @@ export default function CaseView({ client }: { client: SpecterClient }) {
     return () => {
       cancelled = true;
     };
-  }, [client, activeCaseId, setGraph, setLedger]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, activeCaseId]);
 
   const refresh = async () => {
-    const [g, l] = await Promise.all([
-      client.caseGraph(activeCaseId, { maxDepth: 5 }),
-      client.caseLedger(activeCaseId),
-    ]);
-    setGraph(g);
-    setLedger(l.blocks);
-  };
-
-  const exportDossier = async (format: "html" | "md") => {
+    if (!activeCaseId) return;
     setBusy(true);
     try {
-      await client.callTool("export_case_dossier", { case_id: activeCaseId, format });
-      await refresh();
+      await load(activeCaseId);
     } finally {
       setBusy(false);
     }
   };
 
-  return (
-    <section className="case-view">
-      <div className="case-toolbar">
-        <div className="tabs">
-          <button className={tab === "graph" ? "tab active" : "tab"} onClick={() => setTab("graph")}>
-            Grafo
-          </button>
-          <button className={tab === "ledger" ? "tab active" : "tab"} onClick={() => setTab("ledger")}>
-            Cadena de custodia ({ledger.length})
-          </button>
-        </div>
-        <div className="toolbar-actions">
-          <button className="btn small" onClick={refresh} disabled={busy}>
-            ↻ Refrescar
-          </button>
-          <button className="btn small" onClick={() => exportDossier("html")} disabled={busy}>
-            Dossier HTML
-          </button>
-          <button className="btn small" onClick={() => exportDossier("md")} disabled={busy}>
-            Dossier MD
-          </button>
-        </div>
-      </div>
+  const sealCase = async () => {
+    if (!activeCaseId) return;
+    setBusy(true);
+    try {
+      useStore.getState().setAttestation(await client.caseAttestation(activeCaseId));
+    } finally {
+      setBusy(false);
+    }
+  };
 
-      {tab === "graph" && <GraphCanvas nodes={graph?.nodes ?? []} edges={graph?.edges ?? []} />}
-      {tab === "ledger" && <LedgerTable blocks={ledger} />}
+  if (!activeCaseId) {
+    return (
+      <EmptyState
+        label="sin expediente activo"
+        body="Selecciona o crea un expediente en el panel lateral para visualizar su grafo de conocimiento, timeline y custodia."
+      />
+    );
+  }
+
+  const counts: Record<CaseViewTab, number | null> = {
+    graph: graph?.nodes.length ?? null,
+    timeline: timeline?.total_events ?? null,
+    correlations:
+      correlations == null
+        ? null
+        : correlations.cross_case.total_shared_entities +
+          correlations.identity_candidates.total_candidates,
+    ledger: ledger?.blocks.length ?? null,
+  };
+
+  const statusDot = ledger?.signature_status ? STATUS_DOT[ledger.signature_status] : undefined;
+
+  // Navegación por teclado accesible para tablist
+  const onTabListKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
+    if (step[e.key] === undefined && e.key !== "Home" && e.key !== "End") return;
+    const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'));
+    if (tabs.length === 0) return;
+    const focused = tabs.indexOf(document.activeElement as HTMLElement);
+    const from = focused === -1 ? tabs.findIndex((t) => t.dataset.state === "selected") : focused;
+    const next =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? tabs.length - 1
+          : (((from < 0 ? 0 : from) + step[e.key]) % tabs.length + tabs.length) % tabs.length;
+    e.preventDefault();
+    tabs[next]?.focus();
+    tabs[next]?.click();
+  };
+
+  return (
+    <section className={`flex min-h-0 min-w-0 flex-1 flex-col ${className}`}>
+      {/* Cabecera: tabs locales únicamente si la navegación global no los gestiona */}
+      {!hideHeader && !hideTabs && (
+        <div className="flex h-[42px] shrink-0 items-center gap-1 border-b border-border-weak-base bg-surface-raised-base px-2.5">
+          <div
+            role="tablist"
+            aria-label="Vistas del expediente"
+            onKeyDown={onTabListKeyDown}
+            className="flex min-w-0 items-center gap-0.5"
+          >
+            {TABS.map((t) => (
+              <TabButton
+                key={t.id}
+                id={`tab-${t.id}`}
+                panelId={`tabpanel-${t.id}`}
+                selected={activeTab === t.id}
+                dot={t.id === "ledger" ? statusDot : undefined}
+                onClick={() => handleTabChange(t.id)}
+              >
+                {t.label}
+                {counts[t.id] != null && (
+                  <span className="mono-data ml-1.5 text-[10px] text-text-weaker">
+                    {counts[t.id]}
+                  </span>
+                )}
+              </TabButton>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Contenido de la pestaña activa */}
+      <div
+        role="tabpanel"
+        id={`tabpanel-${activeTab}`}
+        aria-labelledby={`tab-${activeTab}`}
+        tabIndex={0}
+        className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+      >
+        {activeTab === "graph" && (
+          <GraphCanvas nodes={graph?.nodes ?? []} edges={graph?.edges ?? []} />
+        )}
+        {activeTab === "timeline" && <TimelineView report={timeline} />}
+        {activeTab === "correlations" && (
+          <CorrelationsView
+            report={correlations}
+            caseId={activeCaseId}
+            client={client}
+            onChanged={refresh}
+          />
+        )}
+        {activeTab === "ledger" && (
+          <LedgerTable
+            report={ledger}
+            attestation={attestation}
+            client={client}
+            caseId={activeCaseId}
+            busy={busy}
+            onSeal={sealCase}
+          />
+        )}
+      </div>
     </section>
   );
 }
 
-// ---------------------------------------------------------------------
-// Grafo radial en SVG puro: sin dependencias, determinista y rápido.
-// ---------------------------------------------------------------------
-
-const TYPE_COLORS: Record<string, string> = {
-  DOMAIN: "#4da3ff",
-  SUBDOMAIN: "#69c0ff",
-  IP_ADDRESS: "#b085ff",
-  PERSON: "#ff7ab8",
-  EMAIL: "#ffb84d",
-  SOCIAL_PROFILE: "#4ddbbe",
-  FILE_ARTIFACT: "#d3d34d",
-  GEO_LOCATION: "#7dff8a",
-  ORGANIZATION: "#ff8f5e",
-  ALIAS: "#9aa4b2",
-  PHONE: "#5ed7ff",
-};
-
-function GraphCanvas({ nodes, edges }: { nodes: EntityNode[]; edges: { source_id: string; target_id: string; relation_type: string }[] }) {
-  const layout = useMemo(() => {
-    // Layout radial: nodo con más conexiones al centro; anillos por BFS.
-    const degree = new Map<string, number>();
-    for (const e of edges) {
-      degree.set(e.source_id, (degree.get(e.source_id) ?? 0) + 1);
-      degree.set(e.target_id, (degree.get(e.target_id) ?? 0) + 1);
-    }
-    const sorted = [...nodes].sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0));
-    const pos = new Map<string, { x: number; y: number }>();
-    const W = 760;
-    const H = 560;
-    if (sorted.length > 0) {
-      pos.set(sorted[0].id, { x: W / 2, y: H / 2 });
-      let ring = 1;
-      let idx = 1;
-      while (idx < sorted.length) {
-        const ringCount = Math.min(sorted.length - idx, ring * 6);
-        const radius = 110 + ring * 95;
-        for (let i = 0; i < ringCount; i++) {
-          const angle = (2 * Math.PI * i) / ringCount + ring * 0.5;
-          pos.set(sorted[idx].id, {
-            x: W / 2 + radius * Math.cos(angle) * (H / W) * 1.35,
-            y: H / 2 + radius * Math.sin(angle),
-          });
-          idx++;
-        }
-        ring++;
-      }
-    }
-    return pos;
-  }, [nodes, edges]);
-
-  if (nodes.length === 0) {
-    return <div className="empty-note pad">El grafo está vacío. Ejecuta recolecciones con el agente o desde la consola.</div>;
-  }
-
+function TabButton({
+  id,
+  panelId,
+  selected,
+  onClick,
+  dot,
+  children,
+}: {
+  id: string;
+  panelId: string;
+  selected: boolean;
+  onClick: () => void;
+  dot?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="graph-wrap">
-      <svg viewBox="0 0 760 560" className="graph-svg">
-        {edges.map((e, i) => {
-          const a = layout.get(e.source_id);
-          const b = layout.get(e.target_id);
-          if (!a || !b) return null;
-          return (
-            <line key={`e${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="edge" />
-          );
-        })}
-        {nodes.map((n) => {
-          const p = layout.get(n.id);
-          if (!p) return null;
-          const color = TYPE_COLORS[n.type] ?? "#9aa4b2";
-          return (
-            <g key={n.id} transform={`translate(${p.x},${p.y})`} className="node">
-              <circle r={9} fill={color} fillOpacity={0.9} stroke="#0b0e14" strokeWidth={2} />
-              <title>{`${n.type}: ${n.value}`}</title>
-              <text y={22} textAnchor="middle" className="node-label">
-                {n.value.length > 22 ? `${n.value.slice(0, 21)}…` : n.value}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      <div className="legend">
-        {Object.entries(TYPE_COLORS).map(([t, c]) => (
-          <span key={t} className="legend-item">
-            <span className="dot" style={{ background: c }} /> {t.toLowerCase()}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LedgerTable({ blocks }: { blocks: LedgerBlock[] }) {
-  return (
-    <div className="ledger-wrap">
-      <table className="ledger-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Timestamp</th>
-            <th>Collector</th>
-            <th>Acción</th>
-            <th>Hash</th>
-          </tr>
-        </thead>
-        <tbody>
-          {blocks.map((b) => (
-            <tr key={`${b.case_id}-${b.block_index}`}>
-              <td>{b.block_index}</td>
-              <td>{b.timestamp.slice(0, 19).replace("T", " ")}</td>
-              <td>{b.collector}</td>
-              <td className="action-cell">{b.action}</td>
-              <td className="hash-cell" title={b.block_hash}>
-                {b.block_hash.slice(0, 14)}…
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <button
+      type="button"
+      role="tab"
+      id={id}
+      aria-selected={selected}
+      aria-controls={panelId}
+      tabIndex={selected ? 0 : -1}
+      data-state={selected ? "selected" : "unselected"}
+      onClick={onClick}
+      className={`flex cursor-pointer items-center whitespace-nowrap border-b-2 px-2.5 py-2 font-display text-[12px] font-medium tracking-wide transition-colors duration-150 ${
+        selected
+          ? "border-brand text-text-strong"
+          : "border-transparent text-text-weak hover:text-text-strong"
+      }`}
+    >
+      {dot && <span className={`mr-1.5 inline-block size-2 rounded-xs ${dot}`} />}
+      {children}
+    </button>
   );
 }

@@ -16,6 +16,8 @@ dependencies = [
     "jinja2>=3.1.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
+    "playwright>=1.49.0",
+    "patchright>=1.49.0",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +40,7 @@ packages = ["engine/specter"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["engine"]
-addopts = "--cov=specter --cov=engine --cov-report=term-missing:skip-covered --cov-fail-under=55"
+addopts = "--cov=specter --cov=engine --cov-report=term-missing:skip-covered --cov-fail-under=80"
 
 [tool.coverage.run]
 source = ["engine"]

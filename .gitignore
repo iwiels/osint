@@ -8,6 +8,7 @@ release/
 dist-engine/
 build-engine/
 engine/.venv/
+engine/_build_info.py
 
 # Python
 __pycache__/
@@ -19,8 +20,24 @@ __pycache__/
 # Runtime
 data/*.db
 data/*.db-*
+data/*.key
+data/secrets.json
 reports/*.html
 reports/*.md
+
+# Cobertura y cachés (artefactos, nunca commitear)
+.coverage
+coverage/
+*.tsbuildinfo
+.ruff_cache/
+
+# OpenCode: Specter es ajeno — solo toma prestados los modelos free tier.
+# La integración MCP es opt-in: copia opencode.json.example a opencode.json
+# solo si quieres exponer las tools en tus propias sesiones de OpenCode.
+opencode.json
+.opencode/
+# Config local de cliente MCP (plantilla con ruta personal): no commitear.
+mcp_config.json
 
 # OS / editor
 .DS_Store

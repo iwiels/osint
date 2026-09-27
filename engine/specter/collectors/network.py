@@ -214,6 +214,10 @@ class TLSCollector(BaseCollector):
         entities.append(domain_node)
 
         def _fetch_cert() -> dict[str, Any]:
+            # Forense por diseño: se captura el certificado PRESENTADO aunque la
+            # cadena no verifique (expirado, autofirmado, MITM: eso también es
+            # evidencia). `tls_verified` lo deja explícito; nunca se afirma
+            # validez de cadena a partir de este colector.
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
@@ -226,6 +230,9 @@ class TLSCollector(BaseCollector):
         try:
             cert_dict = await asyncio.to_thread(_fetch_cert)
             cert_info["cert"] = cert_dict
+            # La cadena NO se verifica (ver _fetch_cert): este flag evita que
+            # la UI o un dossier presenten el cert como "válido".
+            cert_info["tls_verified"] = False
 
             subject = dict(x[0] for x in cert_dict.get("subject", ()))
             issuer = dict(x[0] for x in cert_dict.get("issuer", ()))
@@ -357,6 +364,81 @@ class IPEnricher(BaseCollector):
                         )
         except Exception as e:
             enrichment_data["rdap_error"] = str(e)
+
+        # 3. ASN vía Team Cymru (DNS, sin key): origin.asn.cymru.com
+        #    Responde "ASN | prefijo | país | registro | fecha". Solo IPv4
+        #    (IPv6 usa ip6.arpa por nibbles: fuera de este paso).
+        try:
+            octets = ip.split(".")
+            if len(octets) != 4 or not all(p.isdigit() for p in octets):
+                raise ValueError("no IPv4")
+            rev_ip = ".".join(reversed(octets))
+            cymru_name = f"{rev_ip}.origin.asn.cymru.com"
+            resolver = dns.resolver.Resolver()
+            resolver.timeout = 2.0
+            answers = await asyncio.to_thread(resolver.resolve, cymru_name, "TXT")
+            parts = answers[0].to_text().strip('"').split("|")
+            asn_num = parts[0].strip()
+            enrichment_data["asn"] = {
+                "asn": asn_num,
+                "prefix": parts[1].strip() if len(parts) > 1 else "",
+                "country": parts[2].strip() if len(parts) > 2 else "",
+            }
+            asn_node = EntityNode.create(
+                type=EntityType.ASN,
+                value=f"AS{asn_num}",
+                label=f"ASN: AS{asn_num}",
+                attributes={"source": "cymru"},
+            )
+            entities.append(asn_node)
+            relations.append(
+                RelationEdge(
+                    source_id=ip_node.id,
+                    target_id=asn_node.id,
+                    relation_type=RelationType.HOSTED_ON,
+                )
+            )
+        except Exception as e:
+            enrichment_data["asn_error"] = str(e)
+
+        # 4. GeoLite gratuita (ip-api.com, 45 req/min, sin key)
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                resp = await client.get(
+                    f"http://ip-api.com/json/{ip}"
+                    "?fields=status,country,city,lat,lon,isp,org,proxy,hosting,query"
+                )
+                if resp.status_code == 200:
+                    geo = resp.json()
+                    if geo.get("status") == "success":
+                        enrichment_data["geo"] = geo
+                        ip_node.attributes.update(
+                            {
+                                "geo_country": geo.get("country"),
+                                "geo_city": geo.get("city"),
+                                "geo_isp": geo.get("isp"),
+                                "geo_proxy": geo.get("proxy"),
+                                "geo_hosting": geo.get("hosting"),
+                            }
+                        )
+                        if geo.get("lat") is not None and geo.get("lon") is not None:
+                            geo_node = EntityNode.create(
+                                type=EntityType.GEO_LOCATION,
+                                value=f"{geo['lat']},{geo['lon']}",
+                                label=f"GeoIP: {geo.get('city')}, {geo.get('country')}",
+                                attributes={"source": "ip-api"},
+                                confidence=0.7,
+                            )
+                            entities.append(geo_node)
+                            relations.append(
+                                RelationEdge(
+                                    source_id=ip_node.id,
+                                    target_id=geo_node.id,
+                                    relation_type=RelationType.LOCATED_AT,
+                                )
+                            )
+        except Exception as e:
+            enrichment_data["geo_error"] = str(e)
 
         return CollectorResult(
             collector_name=self.name,

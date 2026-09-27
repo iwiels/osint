@@ -13,7 +13,9 @@ from typing import Any
 import httpx
 from PIL import ExifTags, Image
 from pypdf import PdfReader
+from specter import config as specter_config
 from specter.collectors.base import BaseCollector
+from specter.netguard import check_public_http_url, ssrf_enforce
 from specter.osint_core.models import (
     CollectorResult,
     EntityNode,
@@ -21,6 +23,25 @@ from specter.osint_core.models import (
     RelationEdge,
     RelationType,
 )
+
+# C3/A6: tope de descarga y de lectura local (DoS disco/RAM).
+ARTIFACT_MAX_BYTES = 25 * 1024 * 1024
+
+
+def _forbidden_local(path: Path) -> str | None:
+    """Secretos propios del engine: nunca analizables como 'evidencia'.
+
+    El gate de permisos ya exige aprobación para esta tool, pero ni aprobado
+    tiene sentido sellar la bóveda o la clave HMAC en el ledger.
+    """
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return "ruta ilegible"
+    own = {specter_config.secrets_path().resolve(), specter_config.ledger_key_path().resolve()}
+    if resolved in own or resolved.suffix == ".key" or resolved.name == "secrets.json":
+        return "secreto propio del engine"
+    return None
 
 
 def _convert_gps_to_decimal(coords: Any, ref: str) -> float | None:
@@ -111,12 +132,19 @@ class FileForensics(BaseCollector):
         temp_downloaded = False
         source_url = target
 
-        # Si el target es una URL, descargarlo temporalmente
+        # Si el target es una URL, descargarlo temporalmente (con cotas A6 + NetGuard C2)
         if target.startswith("http://") or target.startswith("https://"):
+            if ssrf_enforce() and (blocked := check_public_http_url(target)):
+                raise ValueError(f"Bloqueada por NetGuard: {blocked}")
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(target)
                 resp.raise_for_status()
+                length = resp.headers.get("content-length")
+                if length and int(length) > ARTIFACT_MAX_BYTES:
+                    raise ValueError(f"Descarga demasiado grande ({length} bytes, máx 25MB)")
                 data = resp.content
+                if len(data) > ARTIFACT_MAX_BYTES:
+                    raise ValueError("Descarga demasiado grande (máx 25MB)")
                 import tempfile
 
                 with tempfile.NamedTemporaryFile(delete=False) as tf:
@@ -126,7 +154,12 @@ class FileForensics(BaseCollector):
         else:
             if not file_path.exists():
                 raise FileNotFoundError(f"Archivo no encontrado: {target}")
+            # C3: ni siquiera aprobado se sellan los secretos propios en el ledger.
+            if forbidden := _forbidden_local(file_path):
+                raise ValueError(f"Archivo bloqueado ({forbidden}): {target}")
             data = file_path.read_bytes()
+            if len(data) > ARTIFACT_MAX_BYTES:
+                raise ValueError("Archivo demasiado grande para analizar (máx 25MB)")
 
         try:
             hashes = self._extract_hashes(data)

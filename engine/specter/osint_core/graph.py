@@ -7,7 +7,12 @@ from typing import Any
 
 import networkx as nx
 from specter.osint_core.database import Database
-from specter.osint_core.models import CollectorResult
+from specter.osint_core.models import (
+    CollectorResult,
+    EntityNode,
+    sanitize_edge_dict,
+    sanitize_node_dict,
+)
 
 
 class OSINTGraph:
@@ -32,6 +37,19 @@ class OSINTGraph:
             )
 
         for r in relations:
+            for endpoint in (r.source_id, r.target_id):
+                if endpoint not in g:
+                    stub = EntityNode.from_node_id(endpoint, first_seen=r.first_seen)
+                    g.add_node(
+                        stub.id,
+                        type=stub.type.value,
+                        value=stub.value,
+                        label=stub.label or stub.value,
+                        confidence=stub.confidence,
+                        attributes=stub.attributes,
+                        first_seen=stub.first_seen,
+                        last_seen=stub.last_seen,
+                    )
             g.add_edge(
                 r.source_id,
                 r.target_id,
@@ -61,39 +79,53 @@ class OSINTGraph:
         if g.number_of_nodes() == 0:
             return {"nodes": [], "edges": [], "total_nodes": 0, "total_edges": 0}
 
-        target_nodes = set()
+        has_filter = bool(center_id or entity_type or search_term)
 
-        if center_id and center_id in g:
-            undirected = g.to_undirected()
-            lengths = nx.single_source_shortest_path_length(undirected, center_id, cutoff=max_depth)
-            target_nodes.update(lengths.keys())
+        if has_filter:
+            target_nodes: set[str] = set()
+
+            if center_id:
+                if center_id in g:
+                    undirected = g.to_undirected()
+                    lengths = nx.single_source_shortest_path_length(
+                        undirected, center_id, cutoff=max_depth
+                    )
+                    target_nodes.update(lengths.keys())
+            else:
+                for node, data in g.nodes(data=True):
+                    type_match = True
+                    term_match = True
+                    if entity_type and str(data.get("type", "")).upper() != entity_type.upper():
+                        type_match = False
+                    if search_term:
+                        st = search_term.lower()
+                        val_str = str(data.get("value", "")).lower()
+                        lbl_str = str(data.get("label", "")).lower()
+                        nid_str = str(node).lower()
+                        if st not in val_str and st not in lbl_str and st not in nid_str:
+                            term_match = False
+                    if type_match and term_match:
+                        target_nodes.add(node)
+
+                # Si hay nodos coincidentes y se especificó término, expandir 1 salto
+                if search_term and target_nodes:
+                    expanded = set(target_nodes)
+                    for tn in list(target_nodes):
+                        expanded.update(g.neighbors(tn))
+                        expanded.update(g.predecessors(tn))
+                    target_nodes = expanded
+
+            subg = g.subgraph(target_nodes)
         else:
-            for node, data in g.nodes(data=True):
-                type_match = True
-                term_match = True
-                if entity_type and data.get("type", "").upper() != entity_type.upper():
-                    type_match = False
-                if (
-                    search_term
-                    and search_term.lower() not in data.get("value", "").lower()
-                    and search_term.lower() not in data.get("label", "").lower()
-                ):
-                    term_match = False
-                if type_match and term_match:
-                    target_nodes.add(node)
+            subg = g
 
-            # Si hay nodos coincidentes y se especificó término, expandir 1 salto
-            if search_term and target_nodes:
-                expanded = set(target_nodes)
-                for tn in list(target_nodes):
-                    expanded.update(g.neighbors(tn))
-                    expanded.update(g.predecessors(tn))
-                target_nodes = expanded
-
-        subg = g.subgraph(target_nodes) if target_nodes else g
-
-        nodes_list = [{"id": n, **data} for n, data in subg.nodes(data=True)]
-        edges_list = [{"source": u, "target": v, **data} for u, v, data in subg.edges(data=True)]
+        nodes_list = [
+            sanitize_node_dict(dict(data), node_id=n) for n, data in subg.nodes(data=True)
+        ]
+        edges_list = [
+            sanitize_edge_dict(dict(data), source=u, target=v)
+            for u, v, data in subg.edges(data=True)
+        ]
 
         return {
             "nodes": nodes_list,
@@ -143,7 +175,7 @@ class OSINTGraph:
         def format_rankings(rankings: list[tuple]) -> list[dict[str, Any]]:
             res = []
             for node_id, score in rankings:
-                node_data = g.nodes.get(node_id, {})
+                node_data = sanitize_node_dict(dict(g.nodes.get(node_id, {})), node_id=node_id)
                 res.append(
                     {
                         "id": node_id,
@@ -174,6 +206,9 @@ class OSINTGraph:
         try:
             # Buscar en el grafo no dirigido para encontrar cualquier camino de relación
             path_nodes = nx.shortest_path(g.to_undirected(), source=source_id, target=target_id)
-            return [{"id": node_id, **g.nodes.get(node_id, {})} for node_id in path_nodes]
+            return [
+                sanitize_node_dict(dict(g.nodes.get(node_id, {})), node_id=node_id)
+                for node_id in path_nodes
+            ]
         except nx.NetworkXNoPath:
             return None

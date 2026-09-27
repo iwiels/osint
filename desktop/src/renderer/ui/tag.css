@@ -1,0 +1,97 @@
+@layer components {
+  [data-component="tag"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    max-width: 100%;
+    border: 1px solid var(--border-weak-base);
+    border-radius: var(--ill-r-sm, 2px);
+    background-color: var(--surface-raised-base);
+    color: var(--text-base);
+    font-family: var(--font-family-mono);
+    font-feature-settings: "tnum" 1;
+    font-weight: var(--font-weight-medium);
+    line-height: 1;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    user-select: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &[data-size="normal"] {
+      height: 18px;
+      padding: 0 6px;
+      font-size: var(--font-size-x-small);
+    }
+    &[data-size="large"] {
+      height: 22px;
+      padding: 0 8px;
+      font-size: var(--font-size-small);
+    }
+
+    /* ---- Variantes de trazado --------------------------------------- */
+    &[data-variant="dashed"] {
+      border-style: dashed;
+    }
+
+    &[data-variant="stamp"] {
+      border-style: dashed;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ---- Tonos de chip forense / blueprint -------------------------- */
+    &[data-tone="neutral"] {
+      border-color: var(--border-weak-base);
+      background-color: var(--surface-raised-base);
+      color: var(--text-base);
+    }
+
+    /* Cobalt blueprint accent */
+    &[data-tone="brand"] {
+      border-color: light-dark(var(--ill-indigo, #283f7d), var(--border-brand-base));
+      background-color: light-dark(
+        color-mix(in oklab, var(--ill-indigo, #283f7d) 10%, transparent),
+        var(--surface-brand-weak)
+      );
+      color: light-dark(var(--ill-indigo, #283f7d), var(--text-brand));
+    }
+
+    /* Inspection stamp: aviso / inspección técnica */
+    &[data-tone="warning"] {
+      border-color: var(--border-warning-base);
+      border-style: dashed;
+      background-color: var(--surface-warning-weak);
+      color: var(--text-warning);
+      letter-spacing: 0.04em;
+    }
+
+    /* Inspection stamp: terracota / arcilla illoca */
+    &[data-tone="terracotta"] {
+      border-color: color-mix(in oklab, var(--ill-clay, #ec633d) 65%, transparent);
+      border-style: dashed;
+      background-color: color-mix(in oklab, var(--ill-clay, #ec633d) 12%, transparent);
+      color: light-dark(#9a3412, #fb923c);
+      letter-spacing: 0.04em;
+    }
+
+    &[data-tone="success"] {
+      border-color: var(--border-success-base);
+      background-color: var(--surface-success-weak);
+      color: var(--text-success);
+    }
+
+    &[data-tone="critical"] {
+      border-color: var(--border-critical-base);
+      background-color: var(--surface-critical-weak);
+      color: var(--text-critical);
+    }
+
+    &[data-tone="info"] {
+      border-color: color-mix(in oklab, var(--info) 45%, transparent);
+      background-color: var(--surface-info-weak);
+      color: var(--text-info);
+    }
+  }
+}

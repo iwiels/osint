@@ -12,6 +12,7 @@ reemplace (estado: `reemplazado por ADR-XXX`).
 | [ADR-002](adr-002-http-sse-transport.md) | HTTP + SSE (FastAPI) como transporte del motor | Aceptada |
 | [ADR-003](adr-003-unified-registry.md) | Registro único de tools MCP + configuración call-time | Aceptada |
 | [ADR-004](adr-004-quality-ratchet.md) | Gates de calidad con estrategia ratchet | Aceptada |
+| [ADR-005](adr-005-opencode-zen-free-provider.md) | Gateway Zen HTTP como provider free (bridge CLI eliminado después) | Aceptada con enmienda |
 
 ## Plantilla
 

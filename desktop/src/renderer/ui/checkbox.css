@@ -1,0 +1,74 @@
+@layer components {
+  [data-component="checkbox"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    /* El borde es lo único que identifica la casilla: usa el token de borde de
+       control (≥3:1, WCAG 1.4.11). El pseudo-elemento amplía el área pulsable
+       a 24×24 sin cambiar el tamaño visual (WCAG 2.5.8). */
+    border: 1px solid var(--input-border-base);
+    border-radius: var(--radius-xs);
+    background-color: var(--input-base);
+    color: var(--text-invert);
+    cursor: default;
+    position: relative;
+    transition:
+      background-color var(--duration-base) var(--ease-standard),
+      border-color var(--duration-base) var(--ease-standard),
+      box-shadow var(--duration-base) var(--ease-standard);
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset: -4px;
+    }
+
+    &:hover:not([data-disabled]) {
+      border-color: var(--input-border-hover);
+      background-color: var(--input-hover);
+    }
+    &:focus-visible {
+      box-shadow: var(--shadow-xs-border-focus);
+      outline: none;
+    }
+    &[data-state="checked"],
+    &[data-state="indeterminate"] {
+      border-color: var(--border-brand-base);
+      background-color: var(--button-primary-base);
+      color: var(--text-invert);
+    }
+    &[data-disabled] {
+      border-color: var(--border-disabled);
+      background-color: var(--surface-disabled);
+      color: var(--text-weaker);
+    }
+
+    [data-slot="checkbox-indicator"] {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  [data-component="checkbox-field"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: default;
+    color: var(--text-base);
+    font-size: var(--font-size-small);
+    line-height: 1;
+
+    &:hover [data-slot="checkbox-label"] {
+      color: var(--text-strong);
+    }
+
+    [data-slot="checkbox-label"] {
+      transition: color var(--duration-base) var(--ease-standard);
+    }
+  }
+}

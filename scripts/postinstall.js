@@ -43,6 +43,17 @@ function main() {
   } catch (e) {
     console.warn("[specter] pip install fallo (continuando):", e.message);
   }
+
+  // El navegador sigiloso (specter.stealth_browser) necesita el Chromium de
+  // patchright. Si falla la descarga, el engine degrada a fallback HTTP.
+  try {
+    execSync(`${python} -m patchright install chromium`, {
+      stdio: "inherit",
+      timeout: 10 * 60 * 1000,
+    });
+  } catch (e) {
+    console.warn("[specter] patchright install fallo (el engine usara fallback HTTP):", e.message);
+  }
 }
 
 main();

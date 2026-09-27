@@ -17,12 +17,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+
+# Silenciar logging excesivo de solicitudes HTTP individuales de httpx (ej. barridos WhatsMyName)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # --- Resolución de rutas base (dev y ejecutable empaquetado) ---
 if getattr(sys, "frozen", False):  # PyInstaller
@@ -48,13 +52,23 @@ REPORTS_DIR = Path(os.environ.get("SPECTER_REPORTS_DIR", BASE_DIR / "reports"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from specter.osint_core.database import Database
-from specter.osint_core.models import current_utc_iso
+from specter.osint_core.models import (
+    AgentRunResult,
+    CaseCreatedOut,
+    GraphSubgraph,
+    HealthOut,
+    SessionDetailOut,
+    SessionsOut,
+    TimelineReport,
+    current_utc_iso,
+)
 
+from engine import ENGINE_VERSION
 from engine.registry import call_tool_validated, get_registry_tools, get_tool_schemas
 
 # ------------------------------------------------------------------
@@ -67,15 +81,58 @@ db = Database(DATA_DIR / "specter_osint.db")
 app = FastAPI(
     title="Specter Engine",
     description="Motor forense OSINT headless (REST + SSE + MCP)",
-    version="0.2.0",
+    version=ENGINE_VERSION,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # motor local; el renderer Electron sirve origen propio
+    allow_origins=["*"],  # motor local; la autenticación real es el Bearer token
     allow_methods=["*"],
     allow_headers=["*"],
+    # Sin allow_private_network: una web pública no debe pivotar al engine
+    # aunque el token la frene; el renderer Electron desactiva PNA en su lado.
 )
+
+
+def _engine_token() -> str:
+    """Token Bearer del motor (leído por request: los tests lo rotan por env)."""
+    return os.environ.get("SPECTER_ENGINE_TOKEN", "")
+
+
+# Rutas públicas: solo salud y esquema (sin datos). Todo lo demás exige token.
+_PUBLIC_PATHS = {"/health", "/openapi.json", "/docs", "/redoc"}
+
+
+@app.middleware("http")
+async def _require_engine_token(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """C1: el engine solo obedece a quien presente el token del sidecar.
+
+    Sin `SPECTER_ENGINE_TOKEN` configurado el motor queda abierto (dev /
+    scripts locales); en producción el sidecar siempre genera uno aleatorio.
+    El stream SSE (EventSource no manda headers) puede traerlo como `?token=`.
+
+    Los preflight CORS (OPTIONS) nunca traen Authorization: se dejan pasar
+    para que CORSMiddleware responda; el GET/POST real sí exige el token.
+    """
+    if request.method != "OPTIONS" and (request.url.path not in _PUBLIC_PATHS and _engine_token()):
+        auth = request.headers.get("authorization", "")
+        query_token = request.query_params.get("token", "")
+        expected = f"Bearer {_engine_token()}"
+        sse_by_query = request.url.path == "/events" and query_token == _engine_token()
+        if auth != expected and not sse_by_query:
+            # Este 401 sale sin pasar por CORSMiddleware (este middleware es
+            # externo): se le ponen los headers CORS para que el renderer vea
+            # el 401 en vez de un opaco "Failed to fetch".
+            return JSONResponse(
+                {"detail": "Falta o es inválido el token del engine (Bearer)."},
+                status_code=401,
+                headers={
+                    "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+                    "Access-Control-Allow-Headers": "authorization, content-type",
+                },
+            )
+    return await call_next(request)
+
 
 # ------------------------------------------------------------------
 # Event bus en memoria: cualquier componente publica eventos tipados y
@@ -107,25 +164,88 @@ class EventBus:
 bus = EventBus()
 
 
+def _git_hash() -> str | None:
+    """Hash vivo del checkout (solo dev): HEAD corto + sufijo -dirty."""
+    import subprocess
+
+    if not (BASE_DIR / ".git").is_dir():
+        return None
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=BASE_DIR,
+        )
+        if head.returncode != 0 or not head.stdout.strip():
+            return None
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=BASE_DIR,
+        )
+        suffix = "-dirty" if dirty.stdout.strip() else ""
+        return f"{head.stdout.strip()}{suffix}"
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _baked_hash() -> str | None:
+    """Hash sellado en el build (solo existe en el ejecutable empaquetado)."""
+    try:
+        from engine import _build_info  # generado por scripts/build-engine.py
+
+        return _build_info.BUILD_HASH or None
+    except (ImportError, AttributeError):
+        return None
+
+
+_BUILD_HASH: str | None = None
+
+
+def _build_hash() -> str:
+    """Hash del código que sirve este proceso (calculado una vez).
+
+    En checkout dev manda el git vivo (el fichero sellado puede ser resto
+    de un build local); en el ejecutable manda el sellado; si no hay
+    ninguno, "unknown". La UI lo muestra para detectar staleness.
+    """
+    global _BUILD_HASH
+    if _BUILD_HASH is None:
+        _BUILD_HASH = _git_hash() or _baked_hash() or "unknown"
+    return _BUILD_HASH
+
+
+STARTED_AT = current_utc_iso()
+
+
 # ------------------------------------------------------------------
 # Modelos de API
 # ------------------------------------------------------------------
 
 
 class CaseCreate(BaseModel):
-    name: str
-    description: str
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=2000)
     investigator: str = "Analista_Specter"
 
 
 class AgentRunRequest(BaseModel):
     case_id: str | None = None
-    message: str
-    provider: str = "anthropic"
+    message: str = Field(min_length=1, max_length=20000)
+    provider: str = "opencode"
     model: str | None = None
     api_key: str | None = None
     base_url: str | None = None
     max_iterations: int = Field(default=25, ge=1, le=100)
+    stream: bool = True
+    plan_first: bool = True
+    # C4: el gate de permisos es opt-out, no opt-in. La UI lo activa
+    # explícitamente para demos; los tests E2E responden el diálogo.
+    auto_approve: bool = False
 
 
 class AgentPermission(BaseModel):
@@ -133,20 +253,35 @@ class AgentPermission(BaseModel):
     decision: str  # "allow" | "allow_session" | "deny"
 
 
+class RunsCancelRequest(BaseModel):
+    session_id: str | None = None
+
+
+class AgentQuestionReply(BaseModel):
+    request_id: str
+    answers: list[list[str]] = Field(default_factory=list)
+
+
+class SecretUpsert(BaseModel):
+    value: str = Field(min_length=1, max_length=500)
+
+
 # ------------------------------------------------------------------
 # Salud e introspección
 # ------------------------------------------------------------------
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthOut)
 async def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "engine": "specter",
-        "version": "0.2.0",
+        "version": ENGINE_VERSION,
         "mcp_tools": len(await get_registry_tools()),
         "data_dir": str(DATA_DIR),
         "reports_dir": str(REPORTS_DIR),
+        "build_hash": _build_hash(),
+        "started_at": STARTED_AT,
     }
 
 
@@ -170,7 +305,7 @@ async def list_tools() -> dict[str, Any]:
 # ------------------------------------------------------------------
 
 
-@app.post("/cases")
+@app.post("/cases", response_model=CaseCreatedOut)
 async def create_case_endpoint(body: CaseCreate) -> dict[str, Any]:
     raw = await call_tool_validated(
         "create_case",
@@ -194,6 +329,14 @@ async def get_case_endpoint(case_id: str) -> dict[str, Any]:
     if not case:
         raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
     return case.model_dump()
+
+
+@app.delete("/cases/{case_id}")
+async def delete_case_endpoint(case_id: str) -> dict[str, Any]:
+    """Borra un caso con sus entidades, ledger y sesiones (limpieza del legajo)."""
+    if not db.delete_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    return {"status": "ok", "case_id": case_id}
 
 
 # ------------------------------------------------------------------
@@ -228,24 +371,167 @@ async def call_tool_endpoint(tool_name: str, body: ToolCallRequest) -> dict[str,
 # ------------------------------------------------------------------
 
 
-@app.get("/cases/{case_id}/graph")
+@app.get("/cases/{case_id}/graph", response_model=GraphSubgraph)
 async def case_graph(
-    case_id: str, max_depth: int = 2, center_id: str | None = None
+    case_id: str,
+    max_depth: int = 2,
+    center_id: str | None = None,
+    search_term: str | None = None,
+    entity_type: str | None = None,
 ) -> dict[str, Any]:
     if not db.get_case(case_id):
         raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
     from specter.osint_core.graph import OSINTGraph
+    from specter.osint_core.models import sanitize_edge_dict, sanitize_node_dict
 
     graph = OSINTGraph(db)
-    return graph.query_subgraph(case_id=case_id, center_id=center_id, max_depth=max_depth)
+    subgraph = graph.query_subgraph(
+        case_id=case_id,
+        entity_type=entity_type,
+        search_term=search_term,
+        center_id=center_id,
+        max_depth=max_depth,
+    )
+    subgraph["nodes"] = [sanitize_node_dict(n) for n in subgraph.get("nodes", [])]
+    subgraph["edges"] = [sanitize_edge_dict(e) for e in subgraph.get("edges", [])]
+    subgraph["total_nodes"] = len(subgraph["nodes"])
+    subgraph["total_edges"] = len(subgraph["edges"])
+    return subgraph
 
 
 @app.get("/cases/{case_id}/ledger")
 async def case_ledger(case_id: str) -> dict[str, Any]:
     if not db.get_case(case_id):
         raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    from specter.osint_core.ledger import ForensicLedger
+
     blocks = db.get_case_ledger(case_id)
-    return {"case_id": case_id, "blocks": [b.model_dump() for b in blocks]}
+    audit = ForensicLedger(db).verify_case_integrity(case_id)
+    return {
+        "case_id": case_id,
+        "blocks": [b.model_dump() for b in blocks],
+        "signature_status": audit.get("signature_status"),
+        "key_id": audit.get("key_id"),
+        "valid": audit.get("valid"),
+    }
+
+
+@app.get("/cases/{case_id}/timeline", response_model=TimelineReport)
+async def case_timeline(case_id: str, bucket: str = "day") -> dict[str, Any]:
+    """Línea temporal del caso (agregados por día/hora + eventos, para la UI)."""
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    from specter.osint_core.timeline import CaseTimeline
+
+    try:
+        return CaseTimeline(db).build(case_id, bucket=bucket)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/cases/{case_id}/correlations")
+async def case_correlations(case_id: str) -> dict[str, Any]:
+    """Vínculos del caso con el resto del repositorio + candidatos de identidad."""
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    from specter.osint_core.correlation import CorrelationEngine
+
+    engine = CorrelationEngine(db)
+    return {
+        "case_id": case_id,
+        "cross_case": engine.cross_case_matches(case_id=case_id),
+        "identity_candidates": engine.identity_candidates(case_id),
+    }
+
+
+@app.get("/cases/{case_id}/attestation")
+async def case_attestation(case_id: str) -> dict[str, Any]:
+    """Atestación firmada del estado de la cadena de custodia."""
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    from specter.osint_core.ledger import ForensicLedger
+
+    return ForensicLedger(db).attest_case(case_id)
+
+
+# ------------------------------------------------------------------
+# Historial de conversaciones del agente (sesiones propias del engine)
+# ------------------------------------------------------------------
+
+
+@app.get("/agent/sessions", response_model=SessionsOut)
+async def agent_sessions(case_id: str | None = None, limit: int = 50) -> dict[str, Any]:
+    """Sesiones del agente, más recientes primero (opcionalmente de un caso)."""
+    return {
+        "sessions": [s.model_dump() for s in db.list_agent_sessions(case_id, limit)],
+    }
+
+
+@app.get("/agent/sessions/{session_id}", response_model=SessionDetailOut)
+async def agent_session(session_id: str) -> dict[str, Any]:
+    """Transcripción completa de una sesión del agente."""
+    session = db.get_agent_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Sesión {session_id} no existe")
+    return {
+        "session": session.model_dump(),
+        "messages": [m.model_dump() for m in db.get_agent_session_messages(session_id)],
+    }
+
+
+@app.delete("/agent/sessions/{session_id}")
+async def agent_session_delete(session_id: str) -> dict[str, Any]:
+    """Borra una sesión del historial y su transcripción."""
+    if not db.delete_agent_session(session_id):
+        raise HTTPException(status_code=404, detail=f"Sesión {session_id} no existe")
+    return {"status": "ok", "session_id": session_id}
+
+
+@app.post("/agent/runs/cancel")
+async def agent_runs_cancel(body: RunsCancelRequest) -> dict[str, Any]:
+    """Detiene runs en vuelo (botón Detener de la UI). Cooperativo."""
+    from engine import agent
+
+    return {"status": "ok", "cancelled": agent.request_run_cancel(body.session_id)}
+
+
+@app.get("/settings/secrets")
+async def list_secrets_endpoint() -> dict[str, Any]:
+    """Estado de la bóveda local: nombres admitidos y claves enmascaradas."""
+    from specter import config as specter_config
+    from specter import secrets
+
+    return {"secrets": secrets.list_secrets(), "path": str(specter_config.secrets_path())}
+
+
+@app.put("/settings/secrets/{name}")
+async def set_secret_endpoint(name: str, body: SecretUpsert) -> dict[str, Any]:
+    from specter import secrets
+
+    try:
+        secrets.set_secret(name, body.value)
+    except secrets.SecretError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", "secrets": secrets.list_secrets()}
+
+
+@app.delete("/settings/secrets/{name}")
+async def delete_secret_endpoint(name: str) -> dict[str, Any]:
+    from specter import secrets
+
+    try:
+        removed = secrets.delete_secret(name)
+    except secrets.SecretError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", "removed": removed, "secrets": secrets.list_secrets()}
+
+
+@app.get("/intelligence/cross-case")
+async def intelligence_cross_case() -> dict[str, Any]:
+    """Correlación global: artefactos compartidos por dos o más casos."""
+    from specter.osint_core.correlation import CorrelationEngine
+
+    return CorrelationEngine(db).cross_case_matches()
 
 
 # ------------------------------------------------------------------
@@ -291,7 +577,17 @@ async def agent_permission_respond(body: AgentPermission) -> dict[str, Any]:
     return {"status": "ok", "decision": body.decision}
 
 
-@app.post("/agent/run")
+@app.post("/agent/questions/respond")
+async def agent_question_respond(body: AgentQuestionReply) -> dict[str, Any]:
+    from engine import agent
+
+    ok = agent.reply_question(body.request_id, body.answers)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Question request {body.request_id} no existe")
+    return {"status": "ok", "answers": body.answers}
+
+
+@app.post("/agent/run", response_model=AgentRunResult)
 async def agent_run(body: AgentRunRequest) -> dict[str, Any]:
     """Ejecuta el loop del agente y devuelve la transcripción completa de mensajes."""
     from engine import agent  # import perezoso: evita dependencia dura sin clave API
@@ -315,6 +611,9 @@ async def agent_run(body: AgentRunRequest) -> dict[str, Any]:
             base_url=body.base_url,
             max_iterations=body.max_iterations,
             emit=emit,
+            stream=body.stream,
+            plan_first=body.plan_first,
+            auto_approve=body.auto_approve,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -325,11 +624,37 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Specter Engine HTTP server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Reinicio automático al cambiar el código (solo dev: hace "
+        "imposible el engine desactualizado)",
+    )
     args = parser.parse_args()
+
+    # El motor en producción firma su cadena de custodia: si no hay clave local,
+    # se genera aquí (0600) y el servicio nace sellando la evidencia.
+    from specter import config as specter_config
+
+    specter_config.ensure_ledger_key()
+    from specter.server import collectors
+
+    collectors.load_entry_points()
 
     import uvicorn
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    if args.reload:
+        # Con import string para que el reloader observe el paquete.
+        uvicorn.run(
+            "engine.http_server:app",
+            host=args.host,
+            port=args.port,
+            log_level="info",
+            reload=True,
+            reload_dirs=[str(_ENGINE_SRC)],
+        )
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

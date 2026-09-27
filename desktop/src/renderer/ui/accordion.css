@@ -1,0 +1,84 @@
+@layer components {
+  [data-component="accordion-item"] {
+    border: 1px solid var(--border-weak-base);
+    border-radius: var(--radius-md);
+    background-color: var(--surface-raised-base);
+    overflow: clip;
+
+    & + [data-component="accordion-item"] {
+      margin-top: -1px;
+    }
+    &:first-child {
+      border-top-left-radius: var(--radius-md);
+      border-top-right-radius: var(--radius-md);
+    }
+    &:last-child {
+      border-bottom-left-radius: var(--radius-md);
+      border-bottom-right-radius: var(--radius-md);
+    }
+    &[data-state="open"] {
+      background-color: var(--surface-raised-strong);
+    }
+
+    [data-slot="accordion-header"] {
+      margin: 0;
+    }
+
+    [data-slot="accordion-trigger"] {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 0;
+      background-color: transparent;
+      color: var(--text-base);
+      text-align: left;
+      font-family: var(--font-family-sans);
+      font-size: var(--font-size-small);
+      line-height: var(--line-height-large);
+      cursor: default;
+      user-select: none;
+      transition:
+        background-color var(--duration-base) var(--ease-standard),
+        color var(--duration-base) var(--ease-standard);
+
+      &:hover:not(:disabled) {
+        background-color: var(--surface-raised-base-hover);
+        color: var(--text-strong);
+      }
+      &:focus-visible {
+        box-shadow: var(--shadow-xs-border-focus);
+        outline: none;
+      }
+      &[data-disabled] {
+        color: var(--text-weaker);
+      }
+      &[data-state="open"] {
+        color: var(--text-strong);
+      }
+
+      [data-slot="accordion-chevron"] {
+        display: inline-flex;
+        flex-shrink: 0;
+        color: var(--icon-weak-base);
+        transition: transform var(--duration-base) var(--ease-standard);
+      }
+      &[data-state="open"] [data-slot="accordion-chevron"] {
+        transform: rotate(180deg);
+      }
+    }
+
+    [data-slot="accordion-content"] {
+      overflow: hidden;
+      border-top: 1px solid var(--border-weak-base);
+      background-color: var(--background-base);
+    }
+
+    [data-slot="accordion-content-inner"] {
+      padding: 10px;
+    }
+  }
+}

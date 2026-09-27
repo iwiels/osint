@@ -8,9 +8,12 @@
         "run",
         "python",
         "-m",
-        "src.server"
+        "specter.server"
       ],
-      "description": "Servidor MCP de Ciberinteligencia OSINT y Grafos Forenses (SpecterOSINT)"
+      "description": "Servidor MCP de Ciberinteligencia OSINT y Grafos Forenses (SpecterOSINT)",
+      "env": {
+        "PYTHONPATH": "<ABSOLUTE_PATH_TO_THIS_REPO>/engine"
+      }
     }
   }
 }

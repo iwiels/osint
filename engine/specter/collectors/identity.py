@@ -200,6 +200,10 @@ class UsernameInvestigator(BaseCollector):
         self, client: httpx.AsyncClient, site: dict[str, Any], username: str, sem: asyncio.Semaphore
     ) -> dict[str, Any] | None:
         async with sem:
+            # Nota: algunos uri_check del dataset público wmn-data.json traen
+            # api_key de terceros (p.ej. Disqus): es la clave PÚBLICA del
+            # upstream, parte inerte de la URL. Nunca se trata como credencial
+            # propia ni se lee como secreto.
             url = site["uri_check"].replace("{account}", quote(username))
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -221,9 +225,41 @@ class UsernameInvestigator(BaseCollector):
                 return None
         return None
 
+    async def collect_fast(self, username: str) -> list[dict[str, Any]]:
+        """Solo las 7 plataformas rápidas (sin WMN): para pivotes baratos.
+
+        La usa el pivote email→username: 717 sitios por cada email sería
+        abusivo con los proveedores; 7 checks curados bastan como señal.
+        """
+        raw = username.strip().lstrip("@")
+        if not raw or len(raw) > 64:
+            return []
+        found: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
+        async with httpx.AsyncClient(limits=limits, timeout=4.0) as client:
+            results = await asyncio.gather(
+                *[self._check_platform(client, p, raw) for p in PLATFORM_DEFINITIONS],
+                return_exceptions=True,
+            )
+            for res in results:
+                if isinstance(res, dict) and res.get("status") == "EXISTS":
+                    url = res.get("url")
+                    if url not in seen:
+                        seen.add(url)
+                        res["matched_username"] = raw
+                        found.append(res)
+        return found
+
     async def collect(self, target: str, **kwargs: Any) -> CollectorResult:
         raw_username = target.strip().lstrip("@")
         norm_username = unicodedata.normalize("NFKD", raw_username)
+        # Un handle puramente numérico no es un alias elegido: muchas
+        # plataformas asignan IDs secuenciales y cualquier número "existe"
+        # (Dailymotion, ImageShack, Vivino...). Se marca y se baja la
+        # confianza en vez de registrarlo a 0.95 como identidad atribuida.
+        is_numeric = raw_username.isdigit()
+        profile_confidence = 0.5 if is_numeric else 0.95
 
         entities: list[EntityNode] = []
         relations: list[RelationEdge] = []
@@ -295,8 +331,20 @@ class UsernameInvestigator(BaseCollector):
                     "url": url,
                     "category": prof.get("category"),
                     "matched_username": matched_u,
+                    **(
+                        {
+                            "numeric_handle_warning": (
+                                "Identificador puramente numérico: probable ID "
+                                "secuencial asignado por la plataforma, no alias "
+                                "elegido. Validar con un número de control antes "
+                                "de atribuir."
+                            )
+                        }
+                        if is_numeric
+                        else {}
+                    ),
                 },
-                confidence=0.95,
+                confidence=profile_confidence,
             )
             entities.append(prof_node)
             relations.append(
@@ -304,7 +352,7 @@ class UsernameInvestigator(BaseCollector):
                     source_id=parent_alias_id,
                     target_id=prof_node.id,
                     relation_type=RelationType.REGISTERED_WITH,
-                    confidence=0.95,
+                    confidence=profile_confidence,
                 )
             )
 
@@ -320,6 +368,7 @@ class UsernameInvestigator(BaseCollector):
                 "platforms_checked": len(PLATFORM_DEFINITIONS) + len(WMN_SITES),
                 "matches_found": len(found_profiles),
                 "unicode_normalized": norm_username != raw_username,
+                "numeric_target": is_numeric,
             },
         )
 
@@ -434,6 +483,36 @@ class EmailInvestigator(BaseCollector):
                     intel_report["has_gravatar"] = False
         except Exception:
             intel_report["has_gravatar"] = False
+
+        # 5. Pivote email→username (holehe-lite): el local-part se chequea en
+        #    las 7 plataformas rápidas. Es señal (conf 0.7), no atribución.
+        try:
+            local_part = email.split("@")[0]
+            pivot = await UsernameInvestigator().collect_fast(local_part)
+            intel_report["username_pivot"] = [p["url"] for p in pivot]
+            for prof in pivot:
+                prof_node = EntityNode.create(
+                    type=EntityType.SOCIAL_PROFILE,
+                    value=prof["url"],
+                    label=f"{prof['platform']}: @{local_part}",
+                    attributes={
+                        "platform": prof["platform"],
+                        "url": prof["url"],
+                        "via": "email-username-pivot",
+                    },
+                    confidence=0.7,
+                )
+                entities.append(prof_node)
+                relations.append(
+                    RelationEdge(
+                        source_id=email_node.id,
+                        target_id=prof_node.id,
+                        relation_type=RelationType.USES_ALIAS,
+                        confidence=0.7,
+                    )
+                )
+        except Exception as exc:
+            intel_report["username_pivot_error"] = str(exc)[:200]
 
         return CollectorResult(
             collector_name=self.name,

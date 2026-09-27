@@ -1,0 +1,23 @@
+@layer components {
+  [data-component="keybind"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+
+    [data-slot="keybind-key"] {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 4px;
+      border: 1px solid var(--border-weak-base);
+      border-radius: var(--radius-xs);
+      background-color: var(--surface-raised-base);
+      color: var(--text-weak);
+      font-family: var(--font-family-mono);
+      font-size: var(--font-size-x-small);
+      line-height: 1;
+    }
+  }
+}

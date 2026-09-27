@@ -16,9 +16,25 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ENGINE_DIR = REPO_ROOT / "engine"
-for p in (str(REPO_ROOT), str(ENGINE_DIR)):
+TESTS_DIR = Path(__file__).resolve().parent
+for p in (str(REPO_ROOT), str(ENGINE_DIR), str(TESTS_DIR)):
     if p not in sys.path:
         sys.path.insert(0, p)
+
+# Token Bearer que engine_env inyecta (ver fixture): los tests HTTP lo mandan
+# en cada cliente httpx. Mantener en un solo lugar, no hardcodear por archivo.
+TEST_ENGINE_TOKEN = "test-token"
+TEST_AUTH_HEADERS = {"Authorization": f"Bearer {TEST_ENGINE_TOKEN}"}
+
+
+@pytest.fixture(autouse=True)
+def _ssrf_relaxed_in_tests(monkeypatch: pytest.MonkeyPatch):
+    """NetGuard desactivado por defecto en tests (red mockeada, DNS falso).
+
+    Los tests dedicados de SSRF reactivan la protección con
+    SPECTER_SSRF_ENFORCE=1 y DNS stubbeado. Producción: siempre "1".
+    """
+    monkeypatch.setenv("SPECTER_SSRF_ENFORCE", "0")
 
 
 @pytest.fixture()
@@ -30,6 +46,9 @@ def engine_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("SPECTER_DATA_DIR", str(data_dir))
     monkeypatch.setenv("SPECTER_REPORTS_DIR", str(reports_dir))
     monkeypatch.setenv("SPECTER_DB_PATH", str(db_path))
+    # C1: el middleware de auth exige Bearer en todo salvo /health; los tests
+    # HTTP mandan este token en cada cliente ASGI.
+    monkeypatch.setenv("SPECTER_ENGINE_TOKEN", TEST_ENGINE_TOKEN)
 
     from specter import server as specter_server
 
@@ -41,7 +60,7 @@ def engine_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture()
 def engine(engine_env: Path):
     """App FastAPI del engine lista para tests ASGI (sin sockets)."""
-    import http_server  # noqa: import perezoso tras configurar el entorno
+    import http_server  # noqa: E402
 
     http_server.db = specter_server_db(engine_env)
     return http_server
