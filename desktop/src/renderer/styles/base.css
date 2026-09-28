@@ -21,6 +21,10 @@
 
   body {
     background-color: var(--background-base);
+    background-image:
+      repeating-linear-gradient(90deg, light-dark(rgba(64, 74, 80, 0.08), rgba(66, 66, 66, 0.06)) 0px, light-dark(rgba(64, 74, 80, 0.08), rgba(66, 66, 66, 0.06)) 1px, transparent 1px, transparent 16px),
+      repeating-linear-gradient(0deg, light-dark(rgba(64, 74, 80, 0.08), rgba(66, 66, 66, 0.06)) 0px, light-dark(rgba(64, 74, 80, 0.08), rgba(66, 66, 66, 0.06)) 1px, transparent 1px, transparent 16px);
+    background-size: 16px 16px;
     color: var(--text-strong);
     font-family: var(--font-family-sans);
     font-size: var(--font-size-base);

@@ -4,6 +4,11 @@ out/
 dist/
 release/
 
+# Entorno y secretos: nunca commitear credenciales
+.env
+.env.*
+!.env.example
+
 # Engine empaquetado
 dist-engine/
 build-engine/
@@ -17,13 +22,23 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
-# Runtime
+# Runtime de investigación: dossiers, evidencias y capturas son datos de caso
+# (potencialmente personales) — jamás deben entrar al repositorio
 data/*.db
 data/*.db-*
 data/*.key
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 data/secrets.json
-reports/*.html
-reports/*.md
+data/cache/
+data/warc/
+data/specter_osint.db
+# Runtime del engine cuando se arranca desde engine/ (cwd): misma clase de
+# artefacto que data/, nunca debe entrar al repo.
+engine/data/
+reports/*
+!reports/.gitkeep
 
 # Cobertura y cachés (artefactos, nunca commitear)
 .coverage
@@ -38,6 +53,12 @@ opencode.json
 .opencode/
 # Config local de cliente MCP (plantilla con ruta personal): no commitear.
 mcp_config.json
+
+# Herramientas locales del entorno de desarrollo: contienen rutas absolutas de
+# la máquina y, en el caso de mcp.json, credenciales de servidores MCP.
+.perch/
+.superpowers/
+.freebuff/
 
 # OS / editor
 .DS_Store

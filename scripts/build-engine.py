@@ -102,6 +102,10 @@ def build_command() -> list[str]:
         "specter",
         "--collect-submodules",
         "engine",
+        # curl_cffi lleva DLL nativa (libcurl-BoringSSL) + metadatos: sin esto
+        # el exe falla en runtime al importar el transporte con impersonación.
+        "--collect-all",
+        "curl_cffi",
         # Datos embebidos: `specter.config.bundle_dir()` los resuelve en runtime.
         "--add-data",
         f"{WMN_DATA}{SEP}data",
@@ -188,7 +192,7 @@ def main() -> int:
     print("[specter] comando:", " ".join(cmd))
 
     if args.dry_run:
-        print(f"[specter] dry-run OK -> produciría {DIST / (BINARY_NAME + '.exe')}")
+        print(f"[specter] dry-run OK -> produciría {DIST / BINARY_NAME}")
         return 0
 
     subprocess.run(cmd, check=True, cwd=ROOT)

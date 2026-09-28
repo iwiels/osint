@@ -52,6 +52,8 @@ SAFE_TOOLS = {
     "analyze_network_metrics",
     "verify_case_integrity",
     "correlate_cases",
+    "suggest_identity_links_fs",
+    "estimate_capture_time",
     "case_timeline",
     "attest_case_ledger",
     "list_collectors",
@@ -60,6 +62,14 @@ SAFE_TOOLS = {
     "parallel_search",
     "load_skill",
     "todowrite",
+    # Lectura pura: descarga y extrae texto, no escribe en el caso (la ingesta
+    # la hacen los wrappers de escritura, que sí piden permiso). Pedir
+    # aprobación por cada fetch ahogó la sesión real de investigación en
+    # timeouts de 300s.
+    "web_fetch",
+    # Lecturas del navegador sin navegación nueva ni persistencia.
+    "browser_snapshot",
+    "browser_status",
     # Válvula de escape del loop: bloquearla podría dejar al agente sin salida
     # ante una ambigüedad (p.ej. un DNI sin pivotes), así que nunca pide permiso.
     "ask_analyst",
@@ -74,13 +84,14 @@ SENSITIVE_TOOLS = {
     "investigate_identity",
     "investigate_email",
     "investigate_person",
+    "deep_research",
     "hunt_documents_and_leaks",
     "deep_investigate_github",
     "analyze_file_metadata",
     "link_entities",
     "export_case_dossier",
     "run_collector",
-    "web_fetch",
+    "browser_capture_warc",
 }
 
 # Bloqueo duro (ni con aprobación): patrones fnmatch sobre el nombre.
@@ -418,9 +429,10 @@ def _case_brief(case_id: str) -> str | None:
 
 SYSTEM_PROMPT = """Eres Specter, un agente de inteligencia OSINT y análisis forense digital.
 
-Operas dentro de SpecterOSINT, una plataforma forense con cadena de custodia
-criptográfica: cada recolección queda registrada en un ledger inmutable (SHA-256)
-y las entidades descubiertas se insertan en un grafo de conocimiento por caso.
+Operas dentro de SpecterOSINT, una plataforma de investigación con un ledger
+encadenado por SHA-256 y firma HMAC local opcional: ayuda a detectar alteraciones,
+pero no es almacenamiento inmutable ni una firma pública. Las entidades
+descubiertas se insertan en un grafo por caso.
 
 ## Reglas operativas
 1. SIEMPRE trabajas dentro de un caso. Si el usuario no indica uno, lista los casos
@@ -445,10 +457,41 @@ y las entidades descubiertas se insertan en un grafo de conocimiento por caso.
 - Para barrer variantes de una búsqueda usa parallel_search (1 call, N queries
   concurrentes) en vez de N web_search secuenciales.
 
-## Web (sin API key)
-- web_search: DuckDuckGo con títulos+URLs+snippets. parallel_search para variantes
-  (CUITs candidatos, dorks por sitio). web_fetch descarga y extrae texto
+## Búsqueda OSINT profunda
+- web_search combina Bing, DuckDuckGo y Google cuando cada motor responde; revisa
+  `providers` para distinguir resultados, bloqueos, errores y páginas no reconocidas.
+- parallel_search barre hasta 10 consultas en paralelo para variantes puntuales.
+- deep_research es el flujo preferido para investigar un objetivo: genera consultas
+  según el tipo (`person`, `organization`, `domain`, `email`, `username` o `auto`),
+  combina motores, lee páginas públicas y lanza hasta dos rondas de pivotes. Revisa
+  `stop_reason`, `limits_reached`, `provider_status`, `pages_read` y `pivots` antes
+  de concluir que no hay información.
+- Para nombres, usa deep_research y hunt_documents_and_leaks. Usa
+  investigate_person con `execute_search=false` cuando necesites derivar aliases
+  o solicitar sondeos de username, para no repetir sus dorks web. Para dominios,
+  combina deep_research con
+  investigate_domain y enumerate_subdomains; para emails y usernames añade
+  investigate_email o investigate_identity según corresponda. Estas tools
+  especializadas consultan fuentes que una búsqueda web general no cubre.
+- web_fetch descarga y extrae texto
   (máx 5MB): si vuelve truncated:true, acota con max_chars o cambia de fuente.
+- web_fetch y las búsquedas no piden permiso: úsalas sin restricción. La
+  pregunta NO es si puedes leer una URL pública; es si vale la pena.
+
+## Pivotar (la diferencia entre un barrido y una investigación)
+- Cada hallazgo es una NUEVA semilla de búsqueda: un código universitario,
+  email, coautor o nombre de archivo mencionado en un documento debe
+  volver a parallel_search/web_fetch inmediatamente, en el mismo turno si
+  es posible. Un dato que no pivotaste es una pista perdida.
+- Los documentos localizados son FUENTES, no decoración: si un viewer
+  bloquea la descarga (Cloudflare/403), busca el documento por otros
+  caminos: cachés (webcache/cache:), Wayback Machine
+  (http://archive.org/wayback/available?url=...) y variantes de URL
+  (scribd.com ↔ es.scribd.com, /document/ ↔ /doc/). Declara "irrecuperable"
+  sólo tras agotar los tres.
+- Dentro de un documento accesible, extrae NOMBRES, códigos, emails y
+  enlaces: cada uno es un pivote nuevo (coautores, instituciones,
+  referencias).
 
 ## Habilidades (skills)
 - load_skill(name) carga un playbook paso a paso. Disponible: "dni-ar".
@@ -774,7 +817,10 @@ def _history_create(
     try:
         from specter.osint_core.models import AgentSession
 
-        _agent_history_db().create_agent_session(
+        db = _agent_history_db()
+        if db.get_agent_session(run_id) is not None:
+            return
+        db.create_agent_session(
             AgentSession(
                 session_id=run_id,
                 case_id=case_id,
@@ -849,6 +895,7 @@ async def run_agent(
     stream: bool = True,
     plan_first: bool = True,
     auto_approve: bool = False,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     cfg, model_id = _resolve_provider(provider, model, api_key, base_url)
     tools_schema = await _registry_tools()
@@ -858,7 +905,14 @@ async def run_agent(
         "yes",
     )
 
-    session_id = case_id or "global"
+    perm_scope = case_id or "global"
+    # La aprobación por sesión vive mientras el proceso viva: un "permitir
+    # siempre" dentro de un caso no debe re-pedirse en cada run de ese caso.
+    # Sólo se purga el bucket "global" (runs sin caso): de lo contrario una
+    # aprobación global goteaba a casos futuros (bug M6).
+    if perm_scope == "global":
+        for approved in [key for key in _session_approvals if key[0] == "global"]:
+            _session_approvals.discard(approved)
     # @archivo: el usuario puede inyectar ficheros del proyecto como contexto.
     raw_prompt = message
     message = _resolve_mentions(message)
@@ -875,19 +929,26 @@ async def run_agent(
 
     # El streaming sólo aplica al contrato OpenAI (OpenAI, Ollama, Zen, vLLM).
     use_stream = stream and cfg.name != "anthropic"
-    messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
+
+    # Contexto multi-turn de la conversación (estilo opencode session/messages)
+    prior_turns: list[dict[str, Any]] = []
+    if session_id:
+        try:
+            stored_msgs = _agent_history_db().get_agent_session_messages(session_id, limit=50)
+            for m in stored_msgs:
+                if m.role in ("user", "assistant") and m.content:
+                    prior_turns.append({"role": m.role, "content": m.content})
+        except Exception:
+            pass
+
+    messages: list[dict[str, Any]] = [*prior_turns[-10:], {"role": "user", "content": message}]
     tool_results: list[dict[str, Any]] = []
     iterations = 0
     tokens_emitted = 0
     usage = {"input_tokens": 0, "output_tokens": 0}
 
     # El run queda registrado desde el primer mensaje (historial + timeline).
-    run_id = f"sess-{datetime.now(UTC):%Y%m%d}-{uuid.uuid4().hex[:6]}"
-    # M6: "aprobar sesión" vale solo para este run. Sin esta purga, una
-    # aprobación sobrevivía todo el proceso y alcanzaba a casos futuros
-    # que compartieran session_id ("global").
-    for approved in [key for key in _session_approvals if key[0] == session_id]:
-        _session_approvals.discard(approved)
+    run_id = session_id or f"sess-{datetime.now(UTC):%Y%m%d}-{uuid.uuid4().hex[:6]}"
     _history_create(run_id, case_id, cfg.name, model_id, raw_prompt)
     _history_append(run_id, "user", raw_prompt)
 
@@ -947,7 +1008,7 @@ async def run_agent(
 
         # Historial de calls para el guard anti-bucle (vive entre turnos).
         recent_calls: list[tuple[str, str]] = []
-        _active_runs[run_id] = session_id
+        _active_runs[run_id] = perm_scope
         cancelled = False
         while iterations < max_iterations:
             iterations += 1
@@ -1024,7 +1085,7 @@ async def run_agent(
                         result = await _execute_tool(
                             call["name"],
                             args,
-                            session_id,
+                            perm_scope,
                             emit,
                             auto_approve=effective_auto_approve,
                         )

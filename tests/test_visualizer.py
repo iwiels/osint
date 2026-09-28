@@ -57,7 +57,7 @@ def test_dossier_export_html_and_md(temp_db, tmp_path: Path):
     content = Path(exported_html_path).read_text(encoding="utf-8")
     assert "threat.com" in content
     assert "vis-network" in content
-    assert "Cadena Inmutable Verificada" in content
+    assert "Integridad del ledger verificada" in content
 
     # Exportar Markdown
     md_file = tmp_path / "report.md"

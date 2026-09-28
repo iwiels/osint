@@ -47,8 +47,9 @@
     }
   }
 
+  [data-radix-popper-content-wrapper]:has([data-slot="select-content"]),
   [data-component="select"][data-slot="select-content"] {
-    z-index: 60;
+    z-index: 100;
     min-width: var(--radix-select-trigger-width);
     max-height: var(--radix-select-content-available-height);
     padding: 4px;

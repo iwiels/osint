@@ -28,12 +28,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r engine/requirements.txt pytest pytest-cov ruff
 
-      - name: Lint (ruff)
-        run: ruff check engine/ tests/
+      - name: Lint (ruff check + format)
+        # Mismo par que `npm run lint`: si el formato deriva, la CI lo ve.
+        run: |
+          ruff check engine/ tests/
+          ruff format --check engine/ tests/
 
       - name: Tests + coverage gate (80%)
         # pyproject define pythonpath=[engine] y --cov-fail-under=80
         run: python -m pytest tests/ -q
+
+      - name: Contrato motor<->SDK (gen:sdk:check)
+        # El gate que hace ruidosa la deriva del contrato: levanta un engine
+        # efímero y compara /openapi.json contra packages/sdk/src/generated.ts.
+        run: python scripts/gen_sdk_types.py --check
 
   web:
     name: SDK + Desktop (TypeScript)
@@ -53,6 +61,10 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Contraste WCAG AA (a11y:contrast)
+        # Gate de accesibilidad del design system: sin dependencias, solo Node.
+        run: npm run a11y:contrast
 
       - name: SDK tests + coverage gate
         run: npm test

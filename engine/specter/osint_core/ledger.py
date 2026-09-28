@@ -1,6 +1,6 @@
 """
 SpecterOSINT - Forensic Ledger
-Cadena de custodia criptográfica inmutable con encadenamiento de hashes SHA-256.
+Ledger de auditoría con encadenamiento de hashes SHA-256 y firma HMAC opcional.
 
 Dos capas de integridad:
   1. Encadenamiento SHA-256 (siempre): cada bloque referencia el hash previo.
@@ -15,6 +15,7 @@ Sin clave el ledger funciona en modo sin firmar y la auditoría lo reporta como
 import hashlib
 import hmac
 import json
+from pathlib import Path
 from typing import Any
 
 from specter import config as specter_config
@@ -269,6 +270,42 @@ class ForensicLedger:
                         "tampered_block_index": curr.block_index,
                     }
 
+                try:
+                    artifact = json.loads(evidence.raw_payload)
+                except (TypeError, json.JSONDecodeError):
+                    artifact = None
+                if isinstance(artifact, dict) and artifact.get("evidence_type") == "WARC_CAPTURE":
+                    path_value = artifact.get("warc_path")
+                    expected_warc_hash = artifact.get("sha256")
+                    if not isinstance(path_value, str) or not isinstance(expected_warc_hash, str):
+                        return {
+                            "valid": False,
+                            "error": f"Referencia WARC inválida en bloque {curr.block_index}",
+                            "tampered_block_index": curr.block_index,
+                        }
+                    try:
+                        warc_root = (specter_config.data_dir() / "warc").resolve()
+                        case_root = (warc_root / case_id).resolve()
+                        warc_path = Path(path_value).resolve(strict=True)
+                        if not warc_path.is_relative_to(case_root) or not warc_path.is_file():
+                            raise OSError("ruta fuera del caso o no es un archivo")
+                        digest = hashlib.sha256()
+                        with warc_path.open("rb") as warc_file:
+                            for chunk in iter(lambda: warc_file.read(1024 * 1024), b""):
+                                digest.update(chunk)
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        return {
+                            "valid": False,
+                            "error": f"WARC faltante o inaccesible en bloque {curr.block_index}: {exc}",
+                            "tampered_block_index": curr.block_index,
+                        }
+                    if digest.hexdigest() != expected_warc_hash:
+                        return {
+                            "valid": False,
+                            "error": f"Hash del archivo WARC no coincide en bloque {curr.block_index}",
+                            "tampered_block_index": curr.block_index,
+                        }
+
         signatures = self._verify_signatures(blocks)
         if signatures["invalid_signature_blocks"]:
             first_invalid = signatures["invalid_signature_blocks"][0]
@@ -330,12 +367,13 @@ class ForensicLedger:
         }
 
     def attest_case(self, case_id: str) -> dict[str, Any]:
-        """Sella el estado actual y emite una atestación verificable por terceros.
+        """Sella el estado actual y emite una atestación HMAC detached.
 
         La atestación es *detached*: payload canónico (JSON con claves
-        ordenadas) + HMAC. Un auditor con la clave recompureba el sello sin
-        acceso a la base de datos, lo que permite entregar el dossier con una
-        prueba de integridad fuera de banda.
+        ordenadas) + HMAC. Un auditor necesita la clave secreta para validarla;
+        compartirla también permite crear atestaciones. El objeto solo resume
+        la cabeza de la cadena, no contiene el ledger ni prueba por sí mismo
+        cada evidencia del caso.
         """
         blocks = self.db.get_case_ledger(case_id)
         if not blocks:

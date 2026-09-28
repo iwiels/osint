@@ -32,6 +32,9 @@ ALLOWED_SECRETS: dict[str, str] = {
     "greynoise_api_key": "GREYNOISE_API_KEY",
     "abuseipdb_api_key": "ABUSEIPDB_API_KEY",
     "hunter_api_key": "HUNTER_API_KEY",
+    "censys_api_id": "CENSYS_API_ID",
+    "censys_api_secret": "CENSYS_API_SECRET",
+    "hibp_api_key": "HIBP_API_KEY",
 }
 
 PROVIDER_SECRETS: dict[str, str] = {

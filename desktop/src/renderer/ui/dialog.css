@@ -1,11 +1,31 @@
 @layer components {
+  @keyframes dialog-overlay-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes dialog-rise {
+    from {
+      opacity: 0;
+      transform: translate(-50%, calc(-50% + 8px));
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%);
+    }
+  }
+
   [data-slot="dialog-overlay"] {
     position: fixed;
     inset: 0;
     z-index: 70;
     background-color: light-dark(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.35));
     backdrop-filter: blur(1px);
-    animation: rise 120ms var(--ease-standard) both;
+    animation: dialog-overlay-fade 120ms var(--ease-standard) both;
   }
 
   [data-component="dialog"] {
@@ -23,13 +43,17 @@
     background-color: var(--surface-raised-stronger);
     box-shadow: var(--shadow-lg);
     overflow: hidden;
-    animation: rise 140ms var(--ease-standard) both;
+    animation: dialog-rise 140ms var(--ease-standard) both;
 
     &[data-size="small"] {
       --dialog-width: 380px;
     }
     &[data-size="large"] {
       --dialog-width: 640px;
+    }
+    &[data-size="x-large"] {
+      --dialog-width: 780px;
+      height: min(580px, calc(100vh - 48px));
     }
 
     [data-slot="dialog-header"] {

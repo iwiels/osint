@@ -1,6 +1,6 @@
 """
 SpecterOSINT - Database Layer
-Gestor de persistencia SQLite optimizado para grafos y auditoría forense inmutable.
+Gestor de persistencia SQLite para casos, grafos y auditoría de evidencias.
 """
 
 import json
@@ -568,6 +568,7 @@ class Database:
                      ended_at, iterations, tools_used, input_tokens,
                      output_tokens, prompt, summary)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO NOTHING
                 """,
                 (
                     session.session_id,
@@ -635,8 +636,12 @@ class Database:
             conn.execute(
                 """
                 UPDATE agent_sessions SET
-                    status = ?, ended_at = ?, iterations = ?, tools_used = ?,
-                    input_tokens = ?, output_tokens = ?, summary = ?
+                    status = ?, ended_at = ?,
+                    iterations = COALESCE(iterations, 0) + ?,
+                    tools_used = COALESCE(tools_used, 0) + ?,
+                    input_tokens = COALESCE(input_tokens, 0) + ?,
+                    output_tokens = COALESCE(output_tokens, 0) + ?,
+                    summary = ?
                 WHERE session_id = ?
                 """,
                 (
@@ -668,6 +673,11 @@ class Database:
                     (case_id, max(1, limit)),
                 )
             return [self._row_to_agent_session(row) for row in cursor.fetchall()]
+
+    def get_latest_case_session(self, case_id: str) -> AgentSession | None:
+        """Retorna la sesión más reciente asociada a un caso."""
+        sessions = self.list_agent_sessions(case_id=case_id, limit=1)
+        return sessions[0] if sessions else None
 
     def get_agent_session(self, session_id: str) -> AgentSession | None:
         """Una sesión del agente por id (para el detalle del historial)."""

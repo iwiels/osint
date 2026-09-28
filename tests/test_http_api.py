@@ -370,7 +370,7 @@ async def test_case_graph_synthesizes_valid_stubs_over_http(engine) -> None:
         case_id = created.json()["case_id"]
 
         # Insertar entidad origen
-        engine.db.upsert_entities(case_id, [EntityNode.create(EntityType.PERSON, "Josue Pizango")])
+        engine.db.upsert_entities(case_id, [EntityNode.create(EntityType.PERSON, "Carlos Mendoza")])
 
         # Insertar relación con target_id que NO está en entities
         # (uno con prefijo social_profile y otro con URL cruda)
@@ -378,13 +378,13 @@ async def test_case_graph_synthesizes_valid_stubs_over_http(engine) -> None:
             case_id,
             [
                 RelationEdge(
-                    source_id="person:josue pizango",
-                    target_id="social_profile:https://facebook.com/pizangochang.josuealejandro",
+                    source_id="person:carlos mendoza",
+                    target_id="social_profile:https://facebook.com/mendozagarcia.carlosandres",
                     relation_type=RelationType.ASSOCIATED_WITH,
                 ),
                 RelationEdge(
-                    source_id="person:josue pizango",
-                    target_id="https://instagram.com/pizango_raw",
+                    source_id="person:carlos mendoza",
+                    target_id="https://instagram.com/mendoza_raw",
                     relation_type=RelationType.ASSOCIATED_WITH,
                 ),
             ],
@@ -400,17 +400,17 @@ async def test_case_graph_synthesizes_valid_stubs_over_http(engine) -> None:
         soc_node = next(
             n
             for n in body["nodes"]
-            if n["id"] == "social_profile:https://facebook.com/pizangochang.josuealejandro"
+            if n["id"] == "social_profile:https://facebook.com/mendozagarcia.carlosandres"
         )
         assert soc_node["type"] == "SOCIAL_PROFILE"
-        assert soc_node["value"] == "https://facebook.com/pizangochang.josuealejandro"
+        assert soc_node["value"] == "https://facebook.com/mendozagarcia.carlosandres"
         assert soc_node["label"] is not None
 
         raw_url_node = next(
-            n for n in body["nodes"] if n["id"] == "https://instagram.com/pizango_raw"
+            n for n in body["nodes"] if n["id"] == "https://instagram.com/mendoza_raw"
         )
         assert raw_url_node["type"] == "SOCIAL_PROFILE"
-        assert raw_url_node["value"] == "https://instagram.com/pizango_raw"
+        assert raw_url_node["value"] == "https://instagram.com/mendoza_raw"
 
 
 async def test_questions_respond_404_y_flujo_ok(engine) -> None:
@@ -557,3 +557,41 @@ async def test_caso_se_borra_en_cascada(engine) -> None:
         assert (await client.delete(f"/cases/{case_id}")).status_code == 404
         assert engine.db.get_case_entities(case_id) == []
         assert engine.db.get_agent_session("sess-borrar") is None
+
+
+async def test_agent_run_acepta_session_id(engine, monkeypatch) -> None:
+    from engine import agent
+
+    called_kwargs = {}
+
+    async def mock_run_agent(**kwargs):
+        called_kwargs.update(kwargs)
+        return {
+            "status": "COMPLETED",
+            "provider": kwargs["provider"],
+            "model": "test-model",
+            "session_id": kwargs.get("session_id") or "sess-auto",
+            "iterations": 1,
+            "tools_used": [],
+            "final_message": "Ok",
+            "usage": {"input_tokens": 10, "output_tokens": 10},
+        }
+
+    monkeypatch.setattr(agent, "run_agent", mock_run_agent)
+
+    transport = httpx.ASGITransport(app=engine.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers=TEST_AUTH_HEADERS
+    ) as client:
+        res = await client.post(
+            "/agent/run",
+            json={
+                "message": "continuar investigacion",
+                "session_id": "sess-existente-123",
+                "provider": "opencode",
+            },
+        )
+
+    assert res.status_code == 200
+    assert res.json()["session_id"] == "sess-existente-123"
+    assert called_kwargs.get("session_id") == "sess-existente-123"

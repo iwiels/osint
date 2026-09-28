@@ -18,7 +18,6 @@ import { Button, Icon, Tag, useAutoScroll } from "../ui";
 import {
   ChatComposer,
   ChatMessage,
-  ModelSelector,
   ToolActivityGroup,
 } from "./chat";
 
@@ -61,6 +60,9 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   const chat = useStore((s) => s.chat);
   const pushMessage = useStore((s) => s.pushMessage);
   const clearChat = useStore((s) => s.clearChat);
+  const activeSessionId = useStore((s) => s.activeSessionId);
+  const setActiveSessionId = useStore((s) => s.setActiveSessionId);
+  const startNewSession = useStore((s) => s.startNewSession);
   const agentBusy = useStore((s) => s.agentBusy);
   const setAgentBusy = useStore((s) => s.setAgentBusy);
   const provider = useStore((s) => s.provider);
@@ -75,11 +77,12 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   const historyView = useStore((s) => s.historyView);
   const setHistoryView = useStore((s) => s.setHistoryView);
   const bumpSessions = useStore((s) => s.bumpSessions);
+  const bumpCaseData = useStore((s) => s.bumpCaseData);
   const pendingPermission = useStore((s) => s.pendingPermission);
   const pendingQuestion = useStore((s) => s.pendingQuestion);
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen);
 
   const [input, setInput] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
   const [isPlanExpanded, setIsPlanExpanded] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
@@ -87,9 +90,13 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   const autoScroll = useAutoScroll({ working: agentBusy });
   const { scrollRef, contentRef, onScroll, userScrolled, forceScrollToBottom } = autoScroll;
 
-  // El historial vive en el raíl izquierdo; aquí solo se avisa que cambió.
+  // El historial vive en el raíl izquierdo; solo se reinicia si realmente cambió el caso activo.
+  const prevCaseIdRef = useRef(activeCaseId);
   useEffect(() => {
-    setHistoryView(null);
+    if (prevCaseIdRef.current !== activeCaseId) {
+      prevCaseIdRef.current = activeCaseId;
+      setHistoryView(null);
+    }
   }, [activeCaseId, setHistoryView]);
 
   const activeCase = useMemo(
@@ -119,7 +126,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
     const message = input.trim();
     if (!message || agentBusy || !engineOnline) return;
 
-    setShowSettings(false);
+    setSettingsOpen(false);
     pushMessage({ role: "user", content: message });
     setInput("");
     setAgentBusy(true);
@@ -135,6 +142,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
       const result = await client.agentRun(
         {
           case_id: activeCaseId ?? undefined,
+          session_id: activeSessionId ?? undefined,
           message,
           provider: provider.provider,
           model: provider.model || undefined,
@@ -146,6 +154,10 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
         },
         { signal: controller.signal },
       );
+
+      if (result.session_id) {
+        setActiveSessionId(result.session_id);
+      }
 
       const last = useStore.getState().chat.at(-1);
       if (!last || last.role !== "assistant") {
@@ -166,6 +178,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
       setAgentBusy(false);
       setHistoryView(null);
       bumpSessions();
+      bumpCaseData();
     }
   };
 
@@ -184,52 +197,55 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   return (
     <section
       aria-label="Consola de investigación"
-      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background-base"
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-transparent"
     >
-      <div className="mx-auto flex min-h-0 w-full max-w-[840px] flex-1 flex-col">
-        <div className="flex h-[42px] shrink-0 items-center justify-between border-b border-border-weak-base bg-surface-raised-base px-3.5">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] font-semibold tracking-wider text-text-weak uppercase">
-              Chat
+      {/* Cabecera de 42px full-bleed alineada con la del panel de evidencias */}
+      <div className="flex h-[42px] shrink-0 items-center justify-between border-b border-border-weak-base bg-surface-raised-base/40 backdrop-blur-xs px-3.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-[11px] font-semibold tracking-wider text-text-weak uppercase">
+            Chat
+          </span>
+          {activeCase && (
+            <span
+              className="font-mono text-[10.5px] text-text-weaker truncate max-w-[200px]"
+              title={`${activeCase.name} (${activeCase.case_id})`}
+            >
+              · {activeCase.name}
             </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {usage && (usage.input_tokens > 0 || usage.output_tokens > 0) && (
-              <Tag
-                tone="neutral"
-                size="normal"
-                title={`Consumo de la sesión: ${usage.input_tokens} de entrada, ${usage.output_tokens} de salida`}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <Icon name="arrow-down" size="small" />
-                  {usage.input_tokens}
-                  <Icon name="arrow-up" size="small" />
-                  {usage.output_tokens}
-                </span>
-              </Tag>
-            )}
-
-            {chat.length > 0 && !agentBusy && (
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={clearChat}
-                className="h-6 px-2 font-mono text-[10.5px] text-text-weak hover:text-text-critical"
-                title="Limpiar historial de la consola"
-              >
-                limpiar
-              </Button>
-            )}
-          </div>
+          )}
         </div>
 
-        <ModelSelector
-          open={showSettings}
-          onOpenChange={setShowSettings}
-          client={client}
-        />
+        <div className="flex items-center gap-1.5 shrink-0">
+          {usage && (usage.input_tokens > 0 || usage.output_tokens > 0) && (
+            <Tag
+              tone="neutral"
+              size="normal"
+              title={`Consumo de la sesión: ${usage.input_tokens} de entrada, ${usage.output_tokens} de salida`}
+            >
+              <span className="inline-flex items-center gap-1">
+                <Icon name="arrow-down" size="small" />
+                {usage.input_tokens}
+                <Icon name="arrow-up" size="small" />
+                {usage.output_tokens}
+              </span>
+            </Tag>
+          )}
 
+          {chat.length > 0 && !agentBusy && (
+            <Button
+              variant="ghost"
+              size="small"
+              onClick={startNewSession}
+              className="h-6 px-2 font-mono text-[10.5px] text-text-weak hover:text-text-base"
+              title="Iniciar una nueva sesión / hilo de conversación en este expediente"
+            >
+              + nueva sesión
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="mx-auto flex min-h-0 w-full max-w-[840px] flex-1 flex-col">
         {plan && plan.length > 0 && (
           <div className="shrink-0 border-b border-border-base bg-surface-raised-strong/60 shadow-paper-xs">
             <button
@@ -307,20 +323,33 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
                     {historyView.session_id}
                   </div>
                 </div>
-                <Button
-                  variant="secondary"
-                  size="small"
-                  iconAfter="arrow-right"
-                  onClick={() => setHistoryView(null)}
-                  title="Volver al chat en vivo"
-                >
-                  en vivo
-                </Button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    variant="primary"
+                    size="small"
+                    onClick={() => {
+                      useStore.getState().setChat(historyView.messages);
+                      setHistoryView(null);
+                    }}
+                    title="Cargar esta sesión como activa para continuar investigando"
+                  >
+                    Reanudar
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    iconAfter="arrow-right"
+                    onClick={() => setHistoryView(null)}
+                    title="Volver al chat en vivo"
+                  >
+                    en vivo
+                  </Button>
+                </div>
               </div>
             )}
 
             {!historyView && chat.length === 0 && (
-              <div className="animate-rise relative overflow-hidden rounded-lg border border-border-weak-base bg-surface-raised-base bg-blueprint-grid p-7 text-center shadow-paper-md">
+              <div className="animate-rise relative overflow-hidden rounded-lg border border-border-weak-base bg-surface-raised-base p-7 text-center shadow-paper-md">
                 <h2 className="mb-2 font-display text-[20px] font-semibold tracking-tight text-text-strong">
                   Consola de Inteligencia Forense
                 </h2>
@@ -396,7 +425,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
           client={client}
           providerLabel={provider.provider}
           modelLabel={provider.model}
-          onOpenModelSettings={() => setShowSettings(true)}
+          onOpenModelSettings={() => setSettingsOpen(true)}
           pendingPermission={pendingPermission}
           pendingQuestion={pendingQuestion}
         />

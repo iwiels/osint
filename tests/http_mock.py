@@ -24,6 +24,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlencode
 
 import dns.resolver
 import httpx
@@ -207,7 +208,13 @@ class FakeDNS:
 
 
 def patch_httpx(monkeypatch: Any, router: MockRouter) -> MockRouter:
-    """Sustituye httpx.AsyncClient/Client por fábricas con MockTransport."""
+    """Sustituye httpx.AsyncClient/Client y curl_cffi.AsyncSession por mocks.
+
+    El transporte del kernel (`specter.httpx_transport`) habla curl_cffi con
+    impersonación TLS: el arnés intercepta esa sesión con la MISMA tabla de
+    rutas del router, así que un colector migre o no migre, la suite sigue
+    sin tocar internet real.
+    """
     transport = httpx.MockTransport(router.handler)
     real_async, real_sync = httpx.AsyncClient, httpx.Client
 
@@ -221,7 +228,101 @@ def patch_httpx(monkeypatch: Any, router: MockRouter) -> MockRouter:
 
     monkeypatch.setattr(httpx, "AsyncClient", async_client)
     monkeypatch.setattr(httpx, "Client", sync_client)
+    _patch_curl_session(monkeypatch, router)
     return router
+
+
+class _MockCurlResponse:
+    """Superficie de respuesta curl_cffi (status/headers/content/text/history)."""
+
+    def __init__(self, response: httpx.Response) -> None:
+        self._response = response
+
+    @property
+    def status_code(self) -> int:
+        return self._response.status_code
+
+    @property
+    def headers(self) -> Any:
+        return self._response.headers
+
+    @property
+    def content(self) -> bytes:
+        return self._response.content
+
+    @property
+    def text(self) -> str:
+        return self._response.text
+
+    @property
+    def history(self) -> list:
+        return list(self._response.history)
+
+    @property
+    def url(self) -> str:
+        return str(self._response.request.url)
+
+    def json(self, **kwargs: Any) -> Any:
+        return self._response.json(**kwargs)
+
+    def raise_for_status(self) -> None:
+        self._response.raise_for_status()
+
+
+def _patch_curl_session(monkeypatch: Any, router: MockRouter) -> None:
+    """Sustituye curl_cffi AsyncSession por una sesión en memoria del router."""
+
+    class _FakeAsyncSession:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self._proxy = kwargs.get("proxy")
+            self._impersonate = kwargs.get("impersonate")
+
+        async def __aenter__(self) -> _FakeAsyncSession:
+            return self
+
+        async def __aexit__(self, *exc: Any) -> None:
+            return None
+
+        def _request(self, method: str, url: str, **kwargs: Any) -> Any:
+            content = kwargs.get("content")
+            data = kwargs.get("data")
+            if data is not None and content is None:
+                if isinstance(data, dict):
+                    content = urlencode(data).encode()
+                elif isinstance(data, str):
+                    content = data.encode()
+                else:
+                    content = data
+            request = httpx.Request(
+                method, url, content=content, headers=kwargs.get("headers") or {}
+            )
+            return _MockCurlResponse(router.handler(request))
+
+        async def get(self, url: str, **kwargs: Any) -> Any:
+            kwargs.pop("stream", None)
+            kwargs.pop("allow_redirects", None)
+            return self._request("GET", url, **kwargs)
+
+        async def post(self, url: str, **kwargs: Any) -> Any:
+            return self._request("POST", url, **kwargs)
+
+        async def request(self, method: str, url: str, **kwargs: Any) -> Any:
+            return self._request(method, url, **kwargs)
+
+    try:
+        import curl_cffi.requests as curl_requests
+
+        monkeypatch.setattr(curl_requests, "AsyncSession", _FakeAsyncSession)
+    except ImportError:  # pragma: no cover - curl_cffi siempre presente en dev
+        pass
+    # El kernel importa el nombre directamente (`from curl_cffi.requests import
+    # AsyncSession`): parchear también el módulo que lo consume.
+    try:
+        import specter.httpx_transport as transport_module
+
+        monkeypatch.setattr(transport_module, "AsyncSession", _FakeAsyncSession)
+    except ImportError:  # pragma: no cover
+        pass
 
 
 def patch_dns(monkeypatch: Any, zone: dict[str, Any] | None = None) -> FakeDNS:

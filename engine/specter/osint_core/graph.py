@@ -148,6 +148,7 @@ class OSINTGraph:
                 "top_bridges": [],
                 "top_pagerank": [],
                 "clusters_count": 0,
+                "communities": [],
             }
 
         density = nx.density(g)
@@ -172,6 +173,25 @@ class OSINTGraph:
         # Componentes conexas en versión no dirigida
         clusters_count = nx.number_connected_components(g.to_undirected())
 
+        # Comunidades Louvain (detección no supervisada de células/grupos).
+        communities: list[dict[str, Any]] = []
+        try:
+            from networkx.algorithms.community import louvain_communities
+
+            for index, community in enumerate(louvain_communities(g.to_undirected(), seed=42)):
+                members = sorted(community)
+                communities.append(
+                    {
+                        "community_id": index,
+                        "size": len(members),
+                        "members": members[:25],
+                        "truncated": len(members) > 25,
+                    }
+                )
+            communities.sort(key=lambda c: -c["size"])
+        except Exception:
+            communities = []
+
         def format_rankings(rankings: list[tuple]) -> list[dict[str, Any]]:
             res = []
             for node_id, score in rankings:
@@ -194,6 +214,7 @@ class OSINTGraph:
             "top_bridges": format_rankings(top_betweenness),
             "top_pagerank": format_rankings(top_pagerank),
             "clusters_count": clusters_count,
+            "communities": communities,
         }
 
     def find_shortest_path(

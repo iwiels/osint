@@ -4,6 +4,22 @@
   "private": true,
   "description": "SpecterOSINT - Forensic Intelligence Platform (Electron desktop + Python engine)",
   "license": "MIT",
+  "author": "iwiels",
+  "keywords": [
+    "osint",
+    "forensics",
+    "intelligence",
+    "investigation",
+    "threat-intel",
+    "knowledge-graph",
+    "chain-of-custody",
+    "electron",
+    "fastapi"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iwiels/osint.git"
+  },
   "workspaces": [
     "packages/sdk",
     "desktop"
@@ -23,7 +39,10 @@
     "gen:sdk": "node scripts/run-python.js scripts/gen_sdk_types.py",
     "gen:sdk:check": "node scripts/run-python.js scripts/gen_sdk_types.py --check",
     "smoke:engine": "node scripts/run-python.js scripts/smoke_http.py",
-    "dist:win": "npm run engine:build && npm run build && npm run dist --workspace desktop",
+    "dist:win": "npm run engine:build && npm run build && npm run dist --workspace desktop -- --win",
+    "dist:mac": "npm run engine:build && npm run build && npm run dist --workspace desktop -- --mac",
+    "dist:linux": "npm run engine:build && npm run build && npm run dist --workspace desktop -- --linux",
+    "dist:all": "npm run engine:build && npm run build && npm run dist --workspace desktop -- --win --mac --linux",
     "postinstall": "node scripts/postinstall.js"
   },
   "devDependencies": {

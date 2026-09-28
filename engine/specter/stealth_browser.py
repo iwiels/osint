@@ -57,7 +57,7 @@ import random
 import re
 import time
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
 try:
     # Driver anti-detección: mismo API que playwright.async_api, driver parcheado.
@@ -146,6 +146,55 @@ FINGERPRINTS: list[dict[str, Any]] = [
 ]
 
 USER_AGENT = FINGERPRINTS[0]["ua"]
+
+
+async def _guard_browser_request(route: Any) -> None:
+    """Block non-public HTTP requests, including redirects and WebSocket handshakes."""
+    url = route.request.url
+    try:
+        parsed = urlsplit(url)
+    except ValueError as exc:
+        logger.warning("stealth-browser: URL malformada bloqueada: %s", exc)
+        await route.abort("blockedbyclient")
+        return
+    scheme = parsed.scheme.lower()
+    if scheme in ("data", "blob", "about"):
+        await route.continue_()
+        return
+    if scheme in ("ws", "wss"):
+        parsed = parsed._replace(scheme="https" if scheme == "wss" else "http")
+        url = parsed.geturl()
+    elif scheme not in ("http", "https"):
+        await route.abort("blockedbyclient")
+        return
+    try:
+        await asyncio.to_thread(assert_public_http_url, url)
+    except ValueError as exc:
+        logger.warning("stealth-browser: solicitud bloqueada por NetGuard: %s", exc)
+        await route.abort("blockedbyclient")
+        return
+    await route.continue_()
+
+
+async def _guard_browser_websocket(route: Any) -> None:
+    """Apply NetGuard to WebSocket destinations reached by page scripts."""
+    try:
+        parsed = urlsplit(route.url)
+    except ValueError as exc:
+        logger.warning("stealth-browser: URL WebSocket malformada bloqueada: %s", exc)
+        await route.close(code=1008, reason="URL bloqueada por NetGuard")
+        return
+    if parsed.scheme.lower() not in ("ws", "wss"):
+        await route.close(code=1008, reason="URL bloqueada por NetGuard")
+        return
+    public_url = parsed._replace(scheme="https" if parsed.scheme.lower() == "wss" else "http")
+    try:
+        await asyncio.to_thread(assert_public_http_url, public_url.geturl())
+    except ValueError as exc:
+        logger.warning("stealth-browser: WebSocket bloqueado por NetGuard: %s", exc)
+        await route.close(code=1008, reason="URL bloqueada por NetGuard")
+        return
+    await route.connect()
 
 
 def _stealth_init_script(fp: dict[str, Any]) -> str:
@@ -440,6 +489,7 @@ class StealthBrowser:
                 timezone_id=fp["tz"],
                 viewport=fp["viewport"],
                 device_scale_factor=1,
+                service_workers="block",
                 extra_http_headers={
                     "Accept-Language": fp["accept_language"],
                     "sec-ch-ua": fp["sec_ch_ua"],
@@ -449,6 +499,8 @@ class StealthBrowser:
                 storage_state=None,
             )
             await self._context.add_init_script(_stealth_init_script(fp))
+            await self._context.route("**/*", _guard_browser_request)
+            await self._context.route_web_socket("**/*", _guard_browser_websocket)
             logger.info("stealth-browser: Chromium listo (huella %s)", fp["label"])
 
     async def _shutdown_locked(self) -> None:
@@ -504,12 +556,17 @@ class StealthBrowser:
         engine: str = "bing",
         top_k: int = 10,
     ) -> list[dict[str, str]]:
-        """Búsqueda con Chromium real. Devuelve title/url/snippet.
+        """Búsqueda compatible: devuelve sólo los resultados normalizados."""
+        report = await self.search_detailed(query, engine=engine, top_k=top_k)
+        return report["results"]
 
-        Google redirige a /sorry (CAPTCHA) bajo tráfico automatizado: se detecta
-        y devuelve vacío sin gastar reintentos; los colectores degradan a Bing
-        o DDG.
-        """
+    async def search_detailed(
+        self,
+        query: str,
+        engine: str = "bing",
+        top_k: int = 10,
+    ) -> dict[str, Any]:
+        """Busca en un índice y conserva el motivo si no hay resultados utilizables."""
         query = (query or "").strip()
         if not query:
             raise ValueError("Consulta vacía")
@@ -521,31 +578,81 @@ class StealthBrowser:
         elif engine == "ddg":
             url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
             parse = _DDG_PARSE
-        else:  # google (vía CAPTCHA: los colectores la usan como último recurso)
+            markup_selector = "a.result__a"
+        elif engine == "google":
             url = f"https://www.google.com/search?q={quote_plus(query)}&hl=es"
             parse = _GOOGLE_PARSE
+            markup_selector = "div.g, div[data-sokoban-container]"
+        else:
+            raise ValueError(f"Motor de búsqueda no soportado: {engine}")
+
+        if engine == "bing":
+            markup_selector = "li.b_algo"
 
         try:
             await self._ensure()
             page = await self._context.new_page()
             try:
-                await page.goto(url, timeout=SEARCH_TIMEOUT_MS, wait_until="domcontentloaded")
+                response = await page.goto(
+                    url, timeout=SEARCH_TIMEOUT_MS, wait_until="domcontentloaded"
+                )
                 await asyncio.sleep(SETTLE_DELAY_S + random.uniform(0.1, 0.9))
-                if "/sorry/" in page.url:
-                    logger.info("stealth-browser: Google devolvió CAPTCHA (/sorry); sin resultados")
-                    return []
+                if blocked := await self._looks_blocked(page, search_page=True):
+                    return {"status": "blocked", "reason": blocked, "results": []}
+                status_code = response.status if response else 0
+                if status_code >= 400:
+                    return {
+                        "status": "error",
+                        "reason": f"http_{status_code}",
+                        "results": [],
+                    }
                 raw = await page.evaluate(parse)
+                if not isinstance(raw, list):
+                    return {
+                        "status": "parse_error",
+                        "reason": "El parser no devolvió una lista de resultados",
+                        "results": [],
+                    }
+                results = self._dedupe(raw)[:top_k]
+                if results:
+                    return {"status": "results", "results": results}
+
+                matching_nodes = await page.locator(markup_selector).count()
+                body = await page.evaluate(
+                    "() => (document.body ? document.body.innerText.slice(0, 1200).toLowerCase() : '')"
+                )
+                if matching_nodes:
+                    return {
+                        "status": "parse_error",
+                        "reason": "La página contiene resultados, pero el parser no extrajo ninguno",
+                        "results": [],
+                    }
+                if any(
+                    marker in body
+                    for marker in (
+                        "no results",
+                        "no results found",
+                        "there are no results",
+                        "sin resultados",
+                        "no se han encontrado resultados",
+                    )
+                ):
+                    return {"status": "no_results", "results": []}
+                return {
+                    "status": "empty_or_unrecognized_page",
+                    "reason": "La página no muestra resultados ni un mensaje de búsqueda vacía",
+                    "results": [],
+                }
             finally:
                 with contextlib.suppress(Exception):
                     await page.close()
-            return self._dedupe(raw)[:top_k]
         except Exception as exc:
             logger.warning("stealth-browser: search falló: %s", exc)
             try:
                 await self._restart()
             except RuntimeError as rb:
                 logger.warning("stealth-browser: %s", rb)
-            return []
+            return {"status": "error", "reason": str(exc), "results": []}
 
     async def navigate_and_snapshot(
         self,
@@ -582,11 +689,12 @@ class StealthBrowser:
         """Pausa no determinista tras cargar: los bots pausan tiempos exactos."""
         await asyncio.sleep(SETTLE_DELAY_S + random.uniform(0.1, 0.9))
 
-    async def _looks_blocked(self, page: Any) -> str | None:
+    async def _looks_blocked(self, page: Any, *, search_page: bool = False) -> str | None:
         """Detecta páginas de bloqueo comunes (CAPTCHA, WAF, rate-limit). Devuelve razón o None."""
         try:
             url = page.url or ""
-            if "/sorry/" in url or "challenge" in url or "captcha" in url.lower():
+            path = urlsplit(url).path.lower()
+            if "/sorry/" in path or "challenge" in path or "captcha" in path:
                 return "captcha_redirect"
             title = (await page.title()).lower()
             if any(
@@ -597,17 +705,15 @@ class StealthBrowser:
             body = await page.evaluate(
                 "() => (document.body ? document.body.innerText.slice(0, 500).toLowerCase() : '')"
             )
-            if any(
-                w in body
-                for w in (
-                    "unusual traffic",
-                    "verify you are human",
-                    "are you a robot",
-                    "captcha",
-                    "cloudflare",
-                    "access to this page has been denied",
-                )
-            ):
+            markers = [
+                "unusual traffic",
+                "verify you are human",
+                "are you a robot",
+                "access to this page has been denied",
+            ]
+            if not search_page:
+                markers.extend(("captcha", "cloudflare"))
+            if any(marker in body for marker in markers):
                 return "blocked_content"
         except Exception:
             return None

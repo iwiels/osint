@@ -5,6 +5,10 @@ interface GraphControlsProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
+  onFocusTarget?: () => void;
+  clusterLeaves?: boolean;
+  onToggleClusterLeaves?: () => void;
+  hasClusters?: boolean;
   availableTypes: string[];
   typeCounts?: Record<string, number>;
   selectedTypes: Set<string>;
@@ -17,6 +21,10 @@ export function GraphControls({
   onZoomIn,
   onZoomOut,
   onFitView,
+  onFocusTarget,
+  clusterLeaves = true,
+  onToggleClusterLeaves,
+  hasClusters = false,
   availableTypes,
   typeCounts = {},
   selectedTypes,
@@ -55,6 +63,34 @@ export function GraphControls({
       >
         Encuadrar
       </Button>
+
+      {onFocusTarget && (
+        <Button
+          size="small"
+          variant="ghost"
+          icon="user"
+          onClick={onFocusTarget}
+          title="Centrar en el objetivo principal del caso"
+        >
+          Objetivo
+        </Button>
+      )}
+
+      {hasClusters && onToggleClusterLeaves && (
+        <Button
+          size="small"
+          variant={clusterLeaves ? "secondary" : "ghost"}
+          icon="folder"
+          onClick={onToggleClusterLeaves}
+          title={
+            clusterLeaves
+              ? "Supernodos activos: haz clic para expandir todos los subdominios masivos"
+              : "Subdominios expandidos: haz clic para agrupar en supernodos limpios"
+          }
+        >
+          {clusterLeaves ? "Supernodos" : "Expandidos"}
+        </Button>
+      )}
 
       {availableTypes.length > 0 && (
         <>

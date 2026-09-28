@@ -1,7 +1,10 @@
 name: Release
 
-# Empaqueta el instalador Windows al crear un tag vX.Y.Z.
-# Artefactos: SpecterOSINT-<ver>-setup.exe (instalador) y specter-engine.exe (standalone)
+# Empaqueta los instaladores de las tres plataformas al crear un tag vX.Y.Z.
+# Artefactos por plataforma:
+#   Windows → SpecterOSINT-<ver>-win-x64-setup.exe
+#   macOS   → SpecterOSINT-<ver>-mac-<arch>.dmg / .zip
+#   Linux   → SpecterOSINT-<ver>-linux-x64.AppImage / .deb
 on:
   push:
     tags: ["v*"]
@@ -10,9 +13,17 @@ permissions:
   contents: write # necesario para crear el GitHub Release con artifacts
 
 jobs:
+  # ------------------------------------------------------------------
+  # El binario del motor se compila en cada plataforma: PyInstaller no
+  # cross-compila, así que cada runner produce su propio ejecutable.
+  # ------------------------------------------------------------------
   engine:
-    name: Engine binario (PyInstaller)
-    runs-on: windows-latest
+    name: Engine binario (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -33,13 +44,23 @@ jobs:
       - name: Upload engine artifact
         uses: actions/upload-artifact@v4
         with:
-          name: specter-engine
-          path: dist-engine/specter-engine.exe
+          name: specter-engine-${{ matrix.os }}
+          path: dist-engine/specter-engine*
 
   desktop:
-    name: Instalador Windows (NSIS)
-    runs-on: windows-latest
+    name: Instalador (${{ matrix.os }})
     needs: engine
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            dist: --win
+          - os: macos-latest
+            dist: --mac
+          - os: ubuntu-latest
+            dist: --linux
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +72,7 @@ jobs:
       - name: Download engine binary
         uses: actions/download-artifact@v4
         with:
-          name: specter-engine
+          name: specter-engine-${{ matrix.os }}
           path: dist-engine
 
       - name: Install JS deps
@@ -63,14 +84,37 @@ jobs:
         run: npm run build
 
       - name: Package installer
-        run: npm run dist --workspace desktop
+        run: npm run dist --workspace desktop -- ${{ matrix.dist }}
         env:
           # Sin token de publicación; artifacts solo al GitHub Release
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Release
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+          if-no-files-found: warn
+
+  release:
+    name: Publicar release
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            desktop/release/*.exe
+          files: release-assets/*
           generate_release_notes: true

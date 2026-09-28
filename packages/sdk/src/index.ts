@@ -141,6 +141,7 @@ export class SpecterClient {
 
   agentRun(input: {
     case_id?: string;
+    session_id?: string;
     message: string;
     provider?: string;
     model?: string;

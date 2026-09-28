@@ -8,7 +8,9 @@ import json
 from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
 
+import httpx
 import pytest
+from http_mock import _MockCurlResponse
 from specter.collectors.web import WebFetchCollector, WebSearchCollector
 
 STEALTH = "specter.stealth_browser.get_browser"
@@ -50,19 +52,25 @@ async def test_web_search_via_stealth_browser(monkeypatch):
         search_results=[
             {
                 "title": "Resultado de universidad",
-                "url": "https://unmsm.edu.pe/estudiantes/pizango",
+                "url": "https://universidad.test/estudiantes/mendoza",
                 "snippet": "Estudiante de ingeniería de sistemas.",
             }
         ],
     )
 
-    result = await WebSearchCollector().collect("Josue Pizango")
+    result = await WebSearchCollector().collect("Carlos Mendoza")
 
     assert result.metadata["ok"] is True
     assert result.metadata["results"] == 1
-    assert any(e.value == "https://unmsm.edu.pe/estudiantes/pizango" for e in result.entities)
-    # El colector abre con Bing (Google CAPTCHA-ea a headless); sólo 1 llamada.
-    assert fake.search_calls == [("Josue Pizango", "bing")]
+    assert any(e.value == "https://universidad.test/estudiantes/mendoza" for e in result.entities)
+    # El colector barre todos los motores en paralelo y deduplica el hit
+    # compartido: una sola entidad, tres observaciones de motor.
+    assert sorted(fake.search_calls) == [
+        ("Carlos Mendoza", "bing"),
+        ("Carlos Mendoza", "ddg"),
+        ("Carlos Mendoza", "google"),
+    ]
+    assert result.metadata["status"] == "COMPLETED"
 
 
 @pytest.mark.asyncio
@@ -83,7 +91,14 @@ async def test_web_search_bing_empty_falls_back_to_ddg(monkeypatch):
 
     assert result.metadata["ok"] is True
     assert result.metadata["results"] == 1
-    assert [(q, e) for q, e in fake.search_calls] == [("test", "bing"), ("test", "ddg")]
+    # Barrido paralelo de los tres motores; el hit lo aporta el que sí
+    # devuelve resultados.
+    assert sorted(fake.search_calls) == [
+        ("test", "bing"),
+        ("test", "ddg"),
+        ("test", "google"),
+    ]
+    assert result.metadata["status"] == "COMPLETED"
 
 
 @pytest.mark.asyncio
@@ -124,15 +139,44 @@ async def test_web_search_browser_error_falls_back_to_ddg(monkeypatch):
 
         return _get()
 
-    import httpx
+    # El fallback DDG ahora sale por el transporte curl_cffi (impersonación
+    # TLS): se mockea la sesión del transporte con el arnés, no httpx.
+    import specter.httpx_transport as transport_module
+    from http_mock import MockRouter
+
+    router = MockRouter().add_responder(
+        "POST",
+        r"duckduckgo",
+        lambda req: httpx.Response(status_code=200, text=ddg_html, request=req),
+    )
+
+    class _MockCurlSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def post(self, url, **kwargs):
+            req = httpx.Request(
+                "POST",
+                url,
+                content=str(kwargs.get("data", "")).encode(),
+                headers=kwargs.get("headers") or {},
+            )
+            return _MockCurlResponse(router.handler(req))
+
+        async def get(self, url, **kwargs):
+            req = httpx.Request("GET", url, headers=kwargs.get("headers") or {})
+            return _MockCurlResponse(router.handler(req))
 
     with (
         patch(STEALTH, fake_get_browser),
-        patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post,
+        patch.object(transport_module, "AsyncSession", _MockCurlSession),
     ):
-        # `request` es obligatorio: raise_for_status() lanza RuntimeError sin él.
-        ddg_req = httpx.Request("POST", "https://html.duckduckgo.com/html/")
-        mock_post.return_value = httpx.Response(200, text=ddg_html, request=ddg_req)
         result = await WebSearchCollector().collect("query con fallback")
 
     assert result.metadata["ok"] is True
@@ -154,24 +198,42 @@ async def test_web_fetch_browser_error_falls_back_to_httpx(monkeypatch):
 
         return _get()
 
-    import httpx
+    import specter.httpx_transport as transport_module
+    from http_mock import MockRouter
 
-    async def get_side_effect(url, *args, **kwargs):
-        req = httpx.Request("GET", str(url))
-        return httpx.Response(
-            200,
-            text=html_content,
-            headers={"content-type": "text/html; charset=utf-8"},
-            request=req,
-        )
+    router = MockRouter().add(
+        "GET",
+        r"direct\.org/article",
+        text=html_content,
+        headers={"content-type": "text/html; charset=utf-8"},
+    )
+
+    class _MockCurlSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def post(self, url, **kwargs):
+            req = httpx.Request(
+                "POST",
+                url,
+                content=str(kwargs.get("data", "")).encode(),
+                headers=kwargs.get("headers") or {},
+            )
+            return _MockCurlResponse(router.handler(req))
+
+        async def get(self, url, **kwargs):
+            req = httpx.Request("GET", url, headers=kwargs.get("headers") or {})
+            return _MockCurlResponse(router.handler(req))
 
     with (
         patch(STEALTH, fake_get_browser),
-        patch(
-            "httpx.AsyncClient.get",
-            new_callable=AsyncMock,
-            side_effect=get_side_effect,
-        ) as mock_get,
+        patch.object(transport_module, "AsyncSession", _MockCurlSession),
     ):
         result = await WebFetchCollector().collect("https://direct.org/article")
 
@@ -179,4 +241,3 @@ async def test_web_fetch_browser_error_falls_back_to_httpx(monkeypatch):
     assert result.metadata["title"] == "Direct HTML"
     payload = json.loads(result.raw_payload)
     assert "Direct content extracted" in payload["text"]
-    mock_get.assert_called_once()

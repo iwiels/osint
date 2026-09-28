@@ -16,12 +16,21 @@ from specter import browser_osint
 from specter import config as specter_config
 from specter import triage as artifact_triage
 from specter.collectors.artifacts import FileForensics
+from specter.collectors.attack_surface import AttackSurfaceCollector
+from specter.collectors.docforensics import OfficeDocHunter
 from specter.collectors.dorker import DocumentHunter
 from specter.collectors.github_forensics import GitHubForensics
-from specter.collectors.identity import EmailInvestigator, UsernameInvestigator
+from specter.collectors.identity import (
+    EmailInvestigator,
+    HoleheHunter,
+    IdentityCollector,
+    MaigretHunter,
+    UsernameInvestigator,
+)
 from specter.collectors.network import CrtShCollector, DNSCollector, IPEnricher, TLSCollector
 from specter.collectors.person import PersonInvestigator
 from specter.collectors.registry import CollectorRegistry
+from specter.collectors.research import DeepResearchCollector
 from specter.collectors.threatintel import (
     AbuseIPDBCollector,
     GreyNoiseCollector,
@@ -33,6 +42,10 @@ from specter.collectors.threatintel import (
     UrlscanCollector,
     VirusTotalCollector,
     WaybackCollector,
+)
+from specter.collectors.threatintel_enhanced import (
+    CensysCollector,
+    HaveIBeenPwnedCollector,
 )
 from specter.collectors.web import WebFetchCollector, WebSearchCollector
 from specter.osint_core.correlation import CorrelationEngine
@@ -90,10 +103,12 @@ username_collector = UsernameInvestigator()
 email_collector = EmailInvestigator()
 file_forensics = FileForensics()
 document_hunter = DocumentHunter()
+office_doc_hunter = OfficeDocHunter()
 github_forensics = GitHubForensics()
 person_collector = PersonInvestigator()
 web_search_collector = WebSearchCollector()
 web_fetch_collector = WebFetchCollector()
+deep_research_collector = DeepResearchCollector(web_search_collector, web_fetch_collector)
 # Fase A Maltego-gap (fuentes gratuitas sin key): reputación y exposición.
 internetdb_collector = InternetDBCollector()
 threatfox_collector = ThreatFoxCollector()
@@ -106,6 +121,13 @@ shodan_collector = ShodanCollector()
 greynoise_collector = GreyNoiseCollector()
 abuseipdb_collector = AbuseIPDBCollector()
 hunter_collector = HunterCollector()
+attack_surface_collector = AttackSurfaceCollector()
+
+censys_collector = CensysCollector()
+haveibeenpwned_collector = HaveIBeenPwnedCollector()
+maigret_hunter = MaigretHunter()
+holehe_hunter = HoleheHunter()
+identity_collector = IdentityCollector()
 
 collectors = CollectorRegistry()
 for _collector in (
@@ -113,14 +135,20 @@ for _collector in (
     crt_sh_collector,
     tls_collector,
     ip_enricher,
+    attack_surface_collector,
     username_collector,
     email_collector,
+    maigret_hunter,
+    holehe_hunter,
+    identity_collector,
     file_forensics,
     document_hunter,
     github_forensics,
     person_collector,
+    office_doc_hunter,
     web_search_collector,
     web_fetch_collector,
+    deep_research_collector,
     internetdb_collector,
     threatfox_collector,
     urlscan_collector,
@@ -131,16 +159,23 @@ for _collector in (
     greynoise_collector,
     abuseipdb_collector,
     hunter_collector,
+    censys_collector,
+    haveibeenpwned_collector,
 ):
     collectors.register(_collector)
 
 
 async def _ingest_evidence(
-    case_id: str, collector: Any, target: str, action: str, source_url: str
+    case_id: str, collector: Any, target: str, action: str, source_url: str, **kwargs: Any
 ) -> tuple[Any, RawEvidence]:
     """Atajo Fase A: collect + ingesta al grafo + sello en el ledger."""
-    res = await collector.collect(target)
+    from specter.osint_core.admiralty import rate_source
+
+    res = await collector.collect(target, **kwargs)
     graph.ingest_collector_result(case_id, res)
+    metadata = dict(res.metadata or {})
+    # Fiabilidad Almirantazgo por fuente: transparencia pericial en cada sello.
+    metadata["admiralty"] = rate_source(collector.name)
     raw_ev = RawEvidence(
         id=f"ev-{collector.name}-{uuid.uuid4().hex[:8]}",
         case_id=case_id,
@@ -148,7 +183,7 @@ async def _ingest_evidence(
         source_url=source_url,
         raw_payload=res.raw_payload or "{}",
         payload_hash="auto",
-        metadata=dict(res.metadata or {}),
+        metadata=metadata,
     )
     ledger.record_evidence_action(case_id, collector.name, f"{action}: {target}", raw_ev)
     return res, raw_ev
@@ -201,7 +236,7 @@ def list_cases() -> str:
 async def investigate_domain(case_id: str, domain: str) -> str:
     """
     Ejecuta resolución DNS forense profunda (A, AAAA, MX, NS, TXT, DMARC) e inspección TLS/SSL,
-    insertando las entidades y relaciones en el grafo y asegurando la evidencia en el ledger inmutable.
+    insertando las entidades y relaciones en el grafo y registrando la evidencia en el ledger encadenado.
     """
     case = db.get_case(case_id)
     if not case:
@@ -448,15 +483,18 @@ async def investigate_person(
     full_name: str,
     pivot_usernames: bool = False,
     execute_search: bool = True,
+    context: str = "",
 ) -> str:
     """
     Huella digital de un nombre completo:
     - Registra a la persona en el grafo y deriva candidatos de username
       (ana.delacruz, adelacruz, ...) como entidades ALIAS conectadas.
-    - Genera dorks de documentos de identidad (DNI/NIE/pasaporte/CUIT + nombre
-      en filtraciones indexadas) y dorks de presencia pública.
-    - Si `execute_search=True` (por defecto), realiza búsqueda activa vía el motor
-      de navegación Chromium sigiloso enriqueciendo el grafo con instituciones y documentos.
+    - Genera y ejecuta consultas de presencia, documentos, repositorios y fuentes
+      oficiales usando Bing, DuckDuckGo y Google cuando estén disponibles.
+    - `context` puede incluir país, dominios o instituciones del caso para elegir
+      dorks oficiales; el reporte muestra motores, consultas y fallos.
+    - Si `execute_search=True` (por defecto), lee resultados indexados y enriquece
+      el grafo con instituciones y documentos candidatos.
     - Si `pivot_usernames=True`, sondea los 3 primeros candidatos con el investigator
       de usernames (~700 plataformas) y enlaza perfiles confirmados a la persona.
     """
@@ -464,7 +502,10 @@ async def investigate_person(
     if not case:
         return json.dumps({"error": f"Caso {case_id} no existe"})
 
-    res = await person_collector.collect(full_name, execute_search=execute_search)
+    search_context = context.strip() or f"{case.name} {case.description}"
+    res = await person_collector.collect(
+        full_name, execute_search=execute_search, context=search_context
+    )
     graph.ingest_collector_result(case_id, res)
 
     raw_ev = RawEvidence(
@@ -522,6 +563,8 @@ async def investigate_person(
             "derived_usernames": alias_values,
             "dorks": res.metadata.get("dorks", {}),
             "name_structure": res.metadata.get("name_structure", {}),
+            "web_search": res.metadata.get("web_search", {}),
+            "search_queries": res.metadata.get("search_queries", []),
             "username_pivots": pivots,
             "evidence_hash": raw_ev.payload_hash,
         },
@@ -551,17 +594,24 @@ def triage_entity(artifact: str) -> str:
 
 
 @mcp_server.tool()
-async def hunt_documents_and_leaks(case_id: str, target: str) -> str:
+async def hunt_documents_and_leaks(case_id: str, target: str, context: str = "") -> str:
     """
     Caza pasiva de documentos (PDF, DOCX) y menciones de filtraciones (Pastebin, Rentry, leaks):
-    Busca documentos asociados al objetivo, los descarga e inspecciona automáticamente con FileForensics
-    extrayendo hashes (MD5/SHA1/SHA256) y metadatos de autor, software y fechas en el grafo.
+    Busca documentos asociados al objetivo (web general, repositorios tipo Scribd/Studocu y fuentes
+    oficiales del país detectado en el contexto del caso), los descarga —con fallback a Wayback Machine
+    si la descarga falla— e inspecciona automáticamente con FileForensics extrayendo hashes
+    (MD5/SHA1/SHA256) y metadatos de autor, software y fechas en el grafo.
+
+    PIVOTE DINÁMICO: del contexto del caso (entidades ya ingestado) se extraen identificadores
+    nuevos —emails, códigos numéricos tipo código universitario/expediente— y cada uno dispara
+    su propia ronda de búsqueda documental (pivot loop). Pasa `context` con hallazgos recientes
+    (texto libre) para alimentar el país y las semillas.
     """
     case = db.get_case(case_id)
     if not case:
         return json.dumps({"error": f"Caso {case_id} no existe"})
 
-    res = await document_hunter.collect(target)
+    res = await document_hunter.collect(target, context=context)
     graph.ingest_collector_result(case_id, res)
 
     raw_ev = RawEvidence(
@@ -588,6 +638,8 @@ async def hunt_documents_and_leaks(case_id: str, target: str) -> str:
         if e.type in (EntityType.SOCIAL_PROFILE, EntityType.DOMAIN)
         and e.attributes.get("source") == "DuckDuckGo Intelligence"
     ]
+    metadata = res.metadata
+    raw_report = json.loads(res.raw_payload or "{}")
 
     return json.dumps(
         {
@@ -597,6 +649,14 @@ async def hunt_documents_and_leaks(case_id: str, target: str) -> str:
             "pdf_artifacts": pdfs,
             "web_mentions_found": len(mentions),
             "web_mentions": mentions[:10],
+            "repository_mentions_found": metadata.get("repository_mentions_discovered", 0),
+            "seeds_pivoted": metadata.get("seeds_pivoted", []),
+            "pivot_hits": raw_report.get("pivot_hits", {}),
+            "context_tld": metadata.get("context_tld"),
+            "searches_attempted": metadata.get("searches_attempted", 0),
+            "search_failures": metadata.get("search_failures", 0),
+            "search_diagnostics": metadata.get("search_diagnostics", []),
+            "wayback_recovered": raw_report.get("wayback_recovered", []),
             "evidence_hash": raw_ev.payload_hash,
         },
         indent=2,
@@ -762,6 +822,36 @@ async def analyze_file_metadata(case_id: str, target: str) -> str:
     )
 
 
+@mcp_server.tool()
+async def hunt_office_docs(case_id: str, domain: str, max_docs: int = 8) -> str:
+    """
+    Caza FOCA-style: descarga documentos públicos del dominio (pdf/docx/xlsx)
+    y mina autores, software, rutas UNC, IPs privadas e impresoras.
+    """
+    case = db.get_case(case_id)
+    if not case:
+        return json.dumps({"error": f"Caso {case_id} no existe"})
+
+    res, raw_ev = await _ingest_evidence(
+        case_id,
+        office_doc_hunter,
+        domain,
+        "OFFICE_HUNT",
+        f"officedocs://{domain}",
+        max_docs=max(1, min(int(max_docs), 8)),
+    )
+    return json.dumps(
+        {
+            "status": "COMPLETED",
+            "domain": domain,
+            "mined": res.metadata.get("mined", 0),
+            "leak_docs": res.metadata.get("leak_docs", 0),
+            "evidence_hash": raw_ev.payload_hash,
+        },
+        indent=2,
+    )
+
+
 # --- Herramientas de Correlación y Grafo ---
 
 
@@ -886,6 +976,32 @@ def suggest_identity_links(case_id: str, min_score: float = 0.7, limit: int = 20
 
 
 @mcp_server.tool()
+def suggest_identity_links_fs(
+    case_id: str,
+    match_threshold: float = 2.0,
+    review_threshold: float = 0.0,
+    limit: int = 30,
+) -> str:
+    """
+    Resolución de identidad probabilística Fellegi-Sunter (solo lectura):
+    cada par lleva un peso log2 aditivo campo a campo (email, handle, nombre
+    con Jaro-Winkler), score logístico sin calibración empírica y veredicto match/review.
+    R >= match_threshold → candidato de alta similitud; entre umbrales → revisión
+    humana. Confirmar con link_entities; nada se escribe solo.
+    """
+    case = db.get_case(case_id)
+    if not case:
+        return json.dumps({"error": f"Caso {case_id} no existe"})
+    report = correlation.identity_candidates_fs(
+        case_id,
+        match_threshold=match_threshold,
+        review_threshold=review_threshold,
+        limit=max(1, min(limit, 100)),
+    )
+    return json.dumps({"status": "COMPLETED", **report}, indent=2)
+
+
+@mcp_server.tool()
 def compare_cases(case_a: str, case_b: str) -> str:
     """
     Similitud entre dos casos (Jaccard + veredicto NONE/MODERATE/HIGH): revela
@@ -921,11 +1037,17 @@ def list_collectors() -> str:
 
 
 @mcp_server.tool()
-async def run_collector(case_id: str, collector: str, target: str) -> str:
+async def run_collector(
+    case_id: str,
+    collector: str,
+    target: str,
+    options: dict[str, Any] | None = None,
+) -> str:
     """
     Ejecuta cualquier colector del catálogo (incluido un plugin externo) contra un objetivo:
-    ingesta las entidades en el grafo del caso y sella la evidencia en la cadena de custodia.
-    Usa list_collectors para ver los nombres disponibles.
+    ingesta las entidades en el grafo del caso y sella la evidencia en el ledger.
+    `options` pasa opciones específicas al colector; las consultas activas como
+    `use_holehe=true` requieren opt-in explícito. Usa list_collectors para ver nombres.
     """
     case = db.get_case(case_id)
     if not case:
@@ -942,7 +1064,7 @@ async def run_collector(case_id: str, collector: str, target: str) -> str:
         )
 
     try:
-        res = await registered.instance.collect(target)
+        res = await registered.instance.collect(target, **(options or {}))
     except Exception as exc:
         return json.dumps({"error": f"Colector '{collector}' falló: {exc}", "target": target})
 
@@ -1064,6 +1186,30 @@ async def browser_status() -> str:
 
 
 @mcp_server.tool()
+async def browser_capture_warc(
+    url: str,
+    case_id: str | None = None,
+    max_resources: int = 80,
+    max_body_mb: int = 3,
+    timeout: int = 40,
+) -> str:
+    """
+    Guarda como WARC 1.1 las solicitudes y respuestas que Chromium observa;
+    ReplayWeb.page puede reproducir el archivo. Algunos cuerpos pueden faltar
+    o estar truncados y quedan señalados en el manifiesto. WARC es un formato
+    de archivo, no una certificación de cadena de custodia. Con `case_id`, el
+    SHA-256 se registra en el ledger local y la auditoría también revisa el archivo.
+    """
+    return await browser_osint.osint_capture_warc(
+        url,
+        case_id=case_id,
+        max_resources=max_resources,
+        max_body_mb=max_body_mb,
+        timeout=timeout,
+    )
+
+
+@mcp_server.tool()
 async def web_fetch(url: str, max_chars: int = 12000, timeout: int = 30) -> str:
     """
     Descarga una URL http(s) y extrae título + texto visible (máx 5MB,
@@ -1105,9 +1251,100 @@ async def parallel_search(queries: list[str], top_k: int = 5) -> str:
     )
 
 
+@mcp_server.tool()
+async def deep_research(
+    case_id: str,
+    target: str,
+    target_type: str = "auto",
+    max_queries: int = 30,
+    max_pages: int = 12,
+    max_depth: int = 2,
+    context: str = "",
+) -> str:
+    """Investiga un objetivo en varios índices, lee páginas públicas y sigue pistas.
+
+    target_type admite auto, person, organization, domain, email o username.
+    Los límites controlan consultas, páginas leídas y rondas de pivote. El informe
+    diferencia resultados, bloqueos y errores por motor y marca nombres/emails/
+    dominios extraídos como candidatos, no como vínculos de identidad verificados.
+    """
+    case = db.get_case(case_id)
+    if not case:
+        return json.dumps({"error": f"Caso {case_id} no existe"})
+
+    res, raw_ev = await _ingest_evidence(
+        case_id,
+        deep_research_collector,
+        target,
+        "DEEP_RESEARCH",
+        f"search://{target}",
+        target_type=target_type,
+        max_queries=max_queries,
+        max_pages=max_pages,
+        max_depth=max_depth,
+        context=context.strip() or f"{case.name} {case.description}",
+    )
+    return json.dumps(
+        {
+            "status": res.metadata.get("status", "COMPLETED"),
+            "target": target,
+            **res.metadata,
+            "entities_ingested": len(res.entities),
+            "evidence_hash": raw_ev.payload_hash,
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
+
+
 def _skills_dir() -> Path:
     """Carpeta de playbooks (skills/*.md): repo en dev, bundle en empaquetado."""
     return specter_config.bundle_dir() / "skills"
+
+
+@mcp_server.tool()
+def estimate_capture_time(
+    latitude: float,
+    longitude: float,
+    day: str,
+    shadow_azimuth_deg: float | None = None,
+    shadow_length: float | None = None,
+    object_height: float | None = None,
+    solar_elevation_deg: float | None = None,
+    tolerance_elevation: float = 1.5,
+    tolerance_azimuth: float = 1.0,
+) -> str:
+    """
+    Estima ventanas horarias compatibles con la sombra de un objeto y las
+    efemérides solares NOAA. Pasar coordenadas (EXIF GPS o geolocalización manual), la fecha del
+    suceso y la observación de sombra: acimut de la sombra (0-360 desde el
+    norte) y largo/altura del objeto, o directamente la elevación solar. La
+    respuesta trae ventanas UTC compatibles; el analista aplica el offset
+    horario local del sitio.
+    """
+    from specter.osint_core.solar import estimate_capture_window
+
+    try:
+        day_dt = datetime.fromisoformat(day.strip())
+    except ValueError:
+        return json.dumps({"error": f"Fecha inválida: {day!r} (use YYYY-MM-DD)"})
+    if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+        return json.dumps({"error": "Coordenadas fuera de rango"})
+    try:
+        report = estimate_capture_window(
+            latitude,
+            longitude,
+            day_dt,
+            shadow_azimuth_deg=shadow_azimuth_deg,
+            shadow_length=shadow_length,
+            object_height=object_height,
+            solar_elevation_deg=solar_elevation_deg,
+            tolerance_elevation=float(tolerance_elevation),
+            tolerance_azimuth=float(tolerance_azimuth),
+        )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"status": "COMPLETED", **report}, indent=2, ensure_ascii=False)
 
 
 @mcp_server.tool()
@@ -1204,8 +1441,9 @@ def case_timeline(case_id: str, bucket: str = "day") -> str:
 @mcp_server.tool()
 def attest_case_ledger(case_id: str) -> str:
     """
-    Sella el estado de la cadena de custodia y emite una atestación HMAC-SHA256 verificable
-    por terceros sin acceso a la base forense (payload canónico + firma detached).
+    Emite una atestación HMAC-SHA256 del encabezado actual de la cadena.
+    El verificador necesita la clave secreta; quien la recibe también puede
+    crear atestaciones válidas. No es una firma pública ni reemplaza el ledger.
     """
     return json.dumps(ledger.attest_case(case_id), indent=2)
 
@@ -1224,21 +1462,33 @@ def export_case_dossier(case_id: str, format: str = "html") -> str:
     """
     Genera un informe forense formal:
     - format='html': Visualizador interactivo en HTML autónomo con red visual navegable y panel forense.
+    - format='executive': Dossier ejecutivo HTML, listo para imprimir o guardar como PDF desde el navegador.
+    - format='pdf' o 'pdf_ready': alias del dossier ejecutivo HTML; no genera un PDF binario.
     - format='md' o 'markdown': Dossier estructurado en Markdown con inventario de entidades y cadena de custodia.
     """
     format_lower = format.lower().strip()
     if format_lower == "html":
         file_path = exporter.export_html(case_id)
+    elif format_lower in ("executive", "executive_html", "pdf", "pdf_ready"):
+        file_path = exporter.export_case_dossier_html(case_id)
     elif format_lower in ("md", "markdown"):
         file_path = exporter.export_markdown(case_id)
     else:
-        return json.dumps({"error": f"Formato no soportado: {format}. Use 'html' o 'md'"})
+        return json.dumps(
+            {"error": f"Formato no soportado: {format}. Use 'html', 'executive' o 'md'"}
+        )
 
+    file_type = (
+        "html"
+        if format_lower in ("executive", "executive_html", "pdf", "pdf_ready")
+        else format_lower
+    )
     return json.dumps(
         {
             "status": "DOSSIER_EXPORTED",
             "case_id": case_id,
             "format": format_lower,
+            "file_type": file_type,
             "file_path": file_path,
             "message": f"Dossier generado exitosamente en {file_path}",
         },
@@ -1250,7 +1500,8 @@ def export_case_dossier(case_id: str, format: str = "html") -> str:
 def export_case_stix(case_id: str) -> str:
     """
     Exporta el caso como bundle STIX 2.1 (identity + observables + relationships
-    con confianza): interoperable con MISP, OpenCTI y SIEM vía TAXII.
+    con confianza) para importar en herramientas compatibles. El transporte
+    TAXII no está integrado.
     """
     case = db.get_case(case_id)
     if not case:

@@ -29,6 +29,7 @@ export interface AgentQuestionReply {
 
 export interface AgentRunRequest {
   case_id?: string | null;
+  session_id?: string | null;
   message: string;
   provider?: string;
   model?: string | null;
@@ -93,7 +94,7 @@ export interface EntityNode {
   last_seen?: string;
 }
 
-export type EntityType = "DOMAIN" | "SUBDOMAIN" | "IP_ADDRESS" | "ASN" | "DNS_RECORD" | "SSL_CERTIFICATE" | "PERSON" | "ALIAS" | "EMAIL" | "PHONE" | "SOCIAL_PROFILE" | "ORGANIZATION" | "FILE_ARTIFACT" | "GEO_LOCATION" | "DOCUMENT_ID" | "UNKNOWN";
+export type EntityType = "DOMAIN" | "SUBDOMAIN" | "IP_ADDRESS" | "ASN" | "DNS_RECORD" | "SSL_CERTIFICATE" | "PERSON" | "ALIAS" | "EMAIL" | "PHONE" | "SOCIAL_PROFILE" | "ORGANIZATION" | "FILE_ARTIFACT" | "GEO_LOCATION" | "DOCUMENT_ID" | "CVE" | "BREACH" | "PORT" | "UNKNOWN";
 
 export interface GraphEdge {
   source: string;

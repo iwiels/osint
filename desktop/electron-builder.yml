@@ -10,17 +10,23 @@ files:
   - out/**
   - package.json
 
+# El binario del motor lo produce scripts/build-engine.py (PyInstaller onefile)
+# en dist-engine/. El nombre cambia por plataforma: .exe solo en Windows.
 extraResources:
   - from: ../dist-engine/
     to: engine/
-    filter: ["specter-engine.exe"]
+    filter:
+      - "specter-engine"
+      - "specter-engine.exe"
 
-# Instalador NSIS para Windows con acceso por usuario (no requiere admin)
+# ------------------------------------------------------------------
+# Windows: instalador NSIS por-usuario (no requiere admin)
+# ------------------------------------------------------------------
 win:
   target:
     - target: nsis
       arch: [x64]
-  artifactName: ${productName}-${version}-setup.exe
+  artifactName: ${productName}-${version}-win-${arch}-setup.exe
 
 nsis:
   oneClick: false
@@ -28,5 +34,34 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: SpecterOSINT
+
+# ------------------------------------------------------------------
+# macOS: DMG + ZIP. Sin firma ni notarización configuradas todavía: el
+# usuario tendrá que permitir la app en Ajustes → Privacidad y seguridad.
+# Para distribución sin fricción hay que añadir certificado Developer ID
+# y notarización (no incluido aquí).
+# ------------------------------------------------------------------
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  category: public.app-category.utilities
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  # hardenedRuntime y entitlements se activan al añadir firma real.
+  identity: null
+
+# ------------------------------------------------------------------
+# Linux: AppImage (portable) + .deb
+# ------------------------------------------------------------------
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Utility
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
 
 publish: null

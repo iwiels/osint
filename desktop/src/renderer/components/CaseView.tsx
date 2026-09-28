@@ -6,20 +6,19 @@
  *  - Timeline forense con histograma temporal y alertas de ráfagas (TimelineView)
  *  - Correlaciones y candidatos de resolución de identidad (CorrelationsView)
  *  - Cadena de custodia HMAC-SHA256 y atestaciones criptográficas (LedgerTable)
- *
- * Admite tanto el modo de navegación completa por pestañas internas como el
- * renderizado directo de una pestaña específica (prop `tab`), permitiendo
- * incrustación modular en el tab bar central o en paneles laterales.
  */
 
 import {
+  useCallback,
   useEffect,
+  useMemo,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
 } from "react";
 import type { SpecterClient } from "@specter/sdk";
 import { useStore } from "../store";
+import ErrorBoundary from "./ErrorBoundary";
+import { Button, Icon, IconButton, cn } from "../ui";
 import {
   CorrelationsView,
   EmptyState,
@@ -46,25 +45,22 @@ export interface CaseViewProps {
   tab?: CaseViewTab;
   onTabChange?: (tab: CaseViewTab) => void;
   hideHeader?: boolean;
-  /** Oculta los tabs locales cuando la navegación principal se gestiona en la cabecera global. */
+  /** Oculta los tabs locales cuando la navegación principal se gestiona externamente. */
   hideTabs?: boolean;
   className?: string;
 }
 
-const TABS: Array<{ id: CaseViewTab; label: string }> = [
-  { id: "graph", label: "Grafo" },
-  { id: "timeline", label: "Timeline" },
-  { id: "correlations", label: "Correl." },
-  { id: "ledger", label: "Custodia" },
+const TABS: Array<{
+  id: CaseViewTab;
+  label: string;
+  icon: "graph" | "clock" | "link" | "shield";
+  keybind: string;
+}> = [
+  { id: "graph", label: "GRAFO", icon: "graph", keybind: "Ctrl+1" },
+  { id: "timeline", label: "TIMELINE", icon: "clock", keybind: "Ctrl+2" },
+  { id: "correlations", label: "CORRELACIONES", icon: "link", keybind: "Ctrl+3" },
+  { id: "ledger", label: "CUSTODIA", icon: "shield", keybind: "Ctrl+4" },
 ];
-
-const STATUS_DOT: Record<string, string> = {
-  SEALED: "bg-success",
-  PARTIAL: "bg-warning",
-  UNSIGNED: "bg-warning",
-  INVALID: "bg-critical",
-  KEY_UNAVAILABLE: "bg-surface-disabled",
-};
 
 export default function CaseView({
   client,
@@ -83,40 +79,46 @@ export default function CaseView({
   const timeline = useStore((s) => s.timeline);
   const correlations = useStore((s) => s.correlations);
   const attestation = useStore((s) => s.attestation);
+  const storeActiveTab = useStore((s) => s.activeTab);
+  const setActiveTab = useStore((s) => s.setActiveTab);
+  const caseDataVersion = useStore((s) => s.caseDataVersion);
+  const engineOnline = useStore((s) => s.engineOnline);
 
-  const [internalTab, setInternalTab] = useState<CaseViewTab>(controlledTab ?? "graph");
   const [busy, setBusy] = useState(false);
 
-  // El tab controlado viene de la nav global: si trae un id ajeno (p.ej. "chat"),
-  // se cae a grafo en vez de pintar un panel vacío.
-  const activeTab: CaseViewTab =
-    controlledTab && (TABS as Array<{ id: CaseViewTab }>).some((t) => t.id === controlledTab)
-      ? controlledTab
-      : internalTab;
+  const activeTab: CaseViewTab = controlledTab ?? storeActiveTab;
 
   const handleTabChange = (next: CaseViewTab) => {
-    setInternalTab(next);
+    setActiveTab(next);
     onTabChange?.(next);
   };
 
   const load = async (cid: string) => {
     if (!cid) return;
-    const [g, l, t, c] = await Promise.all([
+    const [gRes, lRes, tRes, cRes] = await Promise.allSettled([
       client.caseGraph(cid, { maxDepth: 5 }),
       client.caseLedger(cid),
       client.caseTimeline(cid, "day"),
       client.caseCorrelations(cid),
     ]);
     const store = useStore.getState();
-    store.setGraph(g);
-    store.setLedger(l);
-    store.setTimeline(t);
-    store.setCorrelations(c);
+    if (gRes.status === "fulfilled") store.setGraph(gRes.value);
+    else console.warn("[specter] error al cargar grafo:", gRes.reason);
+
+    if (lRes.status === "fulfilled") store.setLedger(lRes.value);
+    else console.warn("[specter] error al cargar ledger:", lRes.reason);
+
+    if (tRes.status === "fulfilled") store.setTimeline(tRes.value);
+    else console.warn("[specter] error al cargar timeline:", tRes.reason);
+
+    if (cRes.status === "fulfilled") store.setCorrelations(cRes.value);
+    else console.warn("[specter] error al cargar correlaciones:", cRes.reason);
+
     store.setAttestation(null);
   };
 
   useEffect(() => {
-    if (!activeCaseId) return;
+    if (!activeCaseId || !engineOnline) return;
     let cancelled = false;
     (async () => {
       setBusy(true);
@@ -131,8 +133,7 @@ export default function CaseView({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, activeCaseId]);
+  }, [client, activeCaseId, caseDataVersion, engineOnline]);
 
   const refresh = async () => {
     if (!activeCaseId) return;
@@ -154,36 +155,28 @@ export default function CaseView({
     }
   };
 
-  if (!activeCaseId) {
-    return (
-      <EmptyState
-        label="sin expediente activo"
-        body="Selecciona o crea un expediente en el panel lateral para visualizar su grafo de conocimiento, timeline y custodia."
-      />
-    );
-  }
-
-  const counts: Record<CaseViewTab, number | null> = {
-    graph: graph?.nodes.length ?? null,
-    timeline: timeline?.total_events ?? null,
-    correlations:
-      correlations == null
-        ? null
-        : correlations.cross_case.total_shared_entities +
-          correlations.identity_candidates.total_candidates,
-    ledger: ledger?.blocks.length ?? null,
-  };
-
-  const statusDot = ledger?.signature_status ? STATUS_DOT[ledger.signature_status] : undefined;
+  const counts: Record<CaseViewTab, number | null> = useMemo(
+    () => ({
+      graph: graph?.nodes.length ?? null,
+      timeline: timeline?.total_events ?? null,
+      correlations:
+        correlations == null
+          ? null
+          : correlations.cross_case.total_shared_entities +
+            correlations.identity_candidates.total_candidates,
+      ledger: ledger?.blocks.length ?? null,
+    }),
+    [graph, timeline, correlations, ledger],
+  );
 
   // Navegación por teclado accesible para tablist
-  const onTabListKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    const step: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
-    if (step[e.key] === undefined && e.key !== "Home" && e.key !== "End") return;
+  const onTabListKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>) => {
     const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'));
     if (tabs.length === 0) return;
+    const step: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
+    if (step[e.key] === undefined && e.key !== "Home" && e.key !== "End") return;
     const focused = tabs.indexOf(document.activeElement as HTMLElement);
-    const from = focused === -1 ? tabs.findIndex((t) => t.dataset.state === "selected") : focused;
+    const from = focused === -1 ? tabs.findIndex((t) => t.getAttribute("aria-selected") === "true") : focused;
     const next =
       e.key === "Home"
         ? 0
@@ -193,108 +186,189 @@ export default function CaseView({
     e.preventDefault();
     tabs[next]?.focus();
     tabs[next]?.click();
-  };
+  }, []);
 
   return (
-    <section className={`flex min-h-0 min-w-0 flex-1 flex-col ${className}`}>
-      {/* Cabecera: tabs locales únicamente si la navegación global no los gestiona */}
+    <section className={`flex min-h-0 min-w-0 flex-1 flex-col bg-transparent ${className}`}>
+      {/* Barra de navegación flotante centrada, sin línea divisoria inferior y con margen superior holgado */}
       {!hideHeader && !hideTabs && (
-        <div className="flex h-[42px] shrink-0 items-center gap-1 border-b border-border-weak-base bg-surface-raised-base px-2.5">
-          <div
-            role="tablist"
-            aria-label="Vistas del expediente"
-            onKeyDown={onTabListKeyDown}
-            className="flex min-w-0 items-center gap-0.5"
-          >
-            {TABS.map((t) => (
-              <TabButton
-                key={t.id}
-                id={`tab-${t.id}`}
-                panelId={`tabpanel-${t.id}`}
-                selected={activeTab === t.id}
-                dot={t.id === "ledger" ? statusDot : undefined}
-                onClick={() => handleTabChange(t.id)}
-              >
-                {t.label}
-                {counts[t.id] != null && (
-                  <span className="mono-data ml-1.5 text-[10px] text-text-weaker">
-                    {counts[t.id]}
-                  </span>
-                )}
-              </TabButton>
-            ))}
+        <div className="relative flex shrink-0 items-center justify-center px-4 pt-5 pb-3 bg-transparent z-10">
+          <nav aria-label="Vistas del expediente" className="flex items-center justify-center">
+            <div
+              role="tablist"
+              aria-label="Vistas"
+              onKeyDown={onTabListKeyDown}
+              className="flex items-center gap-1 rounded-md border border-border-base bg-surface-raised-stronger/95 p-1 shadow-paper-sm backdrop-blur-md"
+            >
+              {TABS.map((t) => {
+                const isActive = activeTab === t.id;
+                const count = counts[t.id];
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    id={`workspace-tab-${t.id}`}
+                    aria-selected={isActive}
+                    aria-controls={`tabpanel-${t.id}`}
+                    tabIndex={isActive ? 0 : -1}
+                    onClick={() => handleTabChange(t.id)}
+                    title={`${t.label} (${t.keybind})`}
+                    className={cn(
+                      "relative flex cursor-pointer items-center gap-1.5 rounded-xs px-2.5 py-1 text-[11px] font-mono tracking-tight transition-all duration-base",
+                      isActive
+                        ? "bg-surface-raised-strong font-semibold text-text-strong shadow-paper-xs border border-border-base"
+                        : "text-text-weak hover:bg-surface-base-hover hover:text-text-base border border-transparent",
+                    )}
+                  >
+                    <Icon name={t.icon} size="small" />
+                    <span className="font-sans text-[11.5px] font-medium tracking-wide">
+                      {t.label}
+                    </span>
+                    {count != null && (
+                      <span className="mono-data ml-0.5 rounded-xs border border-border-weak-base/60 bg-surface-inset-base px-1 py-0.2 text-[9px] text-text-weaker">
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+            {activeCaseId && (
+              <IconButton
+                name="refresh"
+                size="small"
+                label="Recargar evidencias"
+                onClick={() => void refresh()}
+                disabled={busy}
+                title="Recargar grafo y evidencias desde el engine"
+              />
+            )}
           </div>
         </div>
       )}
 
-      {/* Contenido de la pestaña activa */}
-      <div
-        role="tabpanel"
-        id={`tabpanel-${activeTab}`}
-        aria-labelledby={`tab-${activeTab}`}
-        tabIndex={0}
-        className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
-      >
-        {activeTab === "graph" && (
-          <GraphCanvas nodes={graph?.nodes ?? []} edges={graph?.edges ?? []} />
-        )}
-        {activeTab === "timeline" && <TimelineView report={timeline} />}
-        {activeTab === "correlations" && (
-          <CorrelationsView
-            report={correlations}
-            caseId={activeCaseId}
-            client={client}
-            onChanged={refresh}
-          />
-        )}
-        {activeTab === "ledger" && (
-          <LedgerTable
-            report={ledger}
-            attestation={attestation}
-            client={client}
-            caseId={activeCaseId}
-            busy={busy}
-            onSeal={sealCase}
-          />
-        )}
-      </div>
+      {/* Contenido de la pestaña activa o estado vacío */}
+      {!activeCaseId ? (
+        <EmptyEvidenceView />
+      ) : (
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col outline-none">
+          {/* Grafo de conocimiento: permanece montado para conservar canvas WebGL, simulación d3 y posiciones */}
+          <div
+            role="tabpanel"
+            id="tabpanel-graph"
+            aria-labelledby="workspace-tab-graph"
+            tabIndex={0}
+            className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+            style={{ display: activeTab === "graph" ? undefined : "none" }}
+          >
+            {busy && !graph ? (
+              <div className="flex flex-1 items-center justify-center p-8 bg-transparent">
+                <span className="font-mono text-[12px] text-text-weak anim-blink">
+                  Cargando grafo de conocimiento…
+                </span>
+              </div>
+            ) : (
+              <ErrorBoundary label="Grafo de conocimiento" fill>
+                <GraphCanvas nodes={graph?.nodes ?? []} edges={graph?.edges ?? []} />
+              </ErrorBoundary>
+            )}
+          </div>
+
+          {/* Timeline forense: permanece montado para preservar scroll y filtros */}
+          <div
+            role="tabpanel"
+            id="tabpanel-timeline"
+            aria-labelledby="workspace-tab-timeline"
+            tabIndex={0}
+            className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+            style={{ display: activeTab === "timeline" ? undefined : "none" }}
+          >
+            <TimelineView report={timeline} />
+          </div>
+
+          {/* Correlaciones y candidatos de resolución */}
+          <div
+            role="tabpanel"
+            id="tabpanel-correlations"
+            aria-labelledby="workspace-tab-correlations"
+            tabIndex={0}
+            className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+            style={{ display: activeTab === "correlations" ? undefined : "none" }}
+          >
+            <CorrelationsView
+              report={correlations}
+              caseId={activeCaseId}
+              client={client}
+              onChanged={refresh}
+            />
+          </div>
+
+          {/* Cadena de custodia y atestaciones criptográficas */}
+          <div
+            role="tabpanel"
+            id="tabpanel-ledger"
+            aria-labelledby="workspace-tab-ledger"
+            tabIndex={0}
+            className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+            style={{ display: activeTab === "ledger" ? undefined : "none" }}
+          >
+            <LedgerTable
+              report={ledger}
+              attestation={attestation}
+              client={client}
+              caseId={activeCaseId}
+              busy={busy}
+              onSeal={sealCase}
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
-function TabButton({
-  id,
-  panelId,
-  selected,
-  onClick,
-  dot,
-  children,
-}: {
-  id: string;
-  panelId: string;
-  selected: boolean;
-  onClick: () => void;
-  dot?: string;
-  children: ReactNode;
-}) {
+function EmptyEvidenceView() {
+  const cases = useStore((s) => s.cases);
+  const setActiveCase = useStore((s) => s.setActiveCase);
+  const hasCases = cases.length > 0;
+
   return (
-    <button
-      type="button"
-      role="tab"
-      id={id}
-      aria-selected={selected}
-      aria-controls={panelId}
-      tabIndex={selected ? 0 : -1}
-      data-state={selected ? "selected" : "unselected"}
-      onClick={onClick}
-      className={`flex cursor-pointer items-center whitespace-nowrap border-b-2 px-2.5 py-2 font-display text-[12px] font-medium tracking-wide transition-colors duration-150 ${
-        selected
-          ? "border-brand text-text-strong"
-          : "border-transparent text-text-weak hover:text-text-strong"
-      }`}
-    >
-      {dot && <span className={`mr-1.5 inline-block size-2 rounded-xs ${dot}`} />}
-      {children}
-    </button>
+    <div className="anim-rise relative flex flex-1 items-center justify-center p-8 bg-transparent">
+      <div className="relative max-w-sm rounded-lg border border-border-weak-base bg-surface-raised-strong p-6 text-center shadow-paper-sm">
+        <div className="mb-3 flex justify-center">
+          <span className="flex size-10 items-center justify-center rounded-md border border-border-weak-base bg-surface-inset-base text-text-brand shadow-paper-xs">
+            <Icon name="folder" size="medium" />
+          </span>
+        </div>
+        <div className="label-caps mb-2 text-text-strong font-mono tracking-wider">Sin expediente</div>
+        <p className="text-[12.5px] leading-relaxed text-text-base mb-4">
+          Selecciona un expediente en el panel lateral o presiona Nuevo para abrir una investigación activa.
+        </p>
+        <div className="flex flex-col gap-2">
+          {hasCases && (
+            <Button
+              variant="primary"
+              size="small"
+              onClick={() => setActiveCase(cases[0].case_id)}
+              icon="folder"
+            >
+              Abrir {cases[0].name}
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={() => useStore.getState().setPanels({ sidebar: true })}
+            icon="list"
+          >
+            Explorar expedientes (Ctrl+B)
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

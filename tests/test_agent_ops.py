@@ -60,7 +60,10 @@ def test_permission_action_reglas() -> None:
     assert _permission_action("parallel_search") == "allow"
     assert _permission_action("ask_analyst") == "allow"
     assert _permission_action("investigate_identity") == "ask"
-    assert _permission_action("web_fetch") == "ask"
+    # web_fetch es lectura pura: pedirle permiso ahogó la sesión real en
+    # timeouts de 300s (la ingesta en el caso la hacen los wrappers de
+    # escritura, que sí preguntan).
+    assert _permission_action("web_fetch") == "allow"
     assert _permission_action("tool_futura_desconocida") == "ask"
 
 
