@@ -12,11 +12,16 @@ SpecterOSINT dejó de ser una capa que depende de OpenCode: ahora es una platafo
 autónoma con su propio motor y su propia interfaz desktop, al estilo Claude Desktop,
 Antigravity u otras apps Electron profesionales.
 
-- **Motor forense** (Python, headless): 32 herramientas de recolección y análisis —
-  DNS/TLS forense, Certificate Transparency, RDAP, huella de identidad en +700
-  plataformas (WhatsMyName), forensia de GitHub, caza de documentos y leaks, análisis
-  de metadatos de archivos, grafo de conocimiento (NetworkX) y **ledger inmutable
-  SHA-256** por caso.
+- **Motor forense** (Python, headless): 40 herramientas de recolección y análisis —
+  DNS/TLS, Certificate Transparency, RDAP, perfiles en +700 sitios (WhatsMyName),
+  forensia de GitHub, caza de documentos, metadatos de archivos y grafo de conocimiento.
+  Cada caso tiene un ledger encadenado SHA-256 con firma HMAC local opcional. La captura
+  WARC 1.1 se puede reproducir en ReplayWeb.page; su manifiesto identifica cuerpos
+  ausentes o truncados. El formato WARC no certifica por sí solo la custodia. El motor
+  también incluye transporte curl_cffi con suplantación de la huella TLS de Chrome,
+  scoring explicable de enlaces Fellegi-Sunter (aún sin calibración empírica),
+  helpers inspirados en Almirantazgo y ventanas temporales solares calculadas
+  a partir de sombras (UTC).
 - **Consola desktop** (Electron + React): gestión de casos, visualización del grafo,
   auditoría de cadena de custodia y **consola de agente IA** que orquesta las
   herramientas forenses con approval humana (permission gate).
@@ -30,7 +35,7 @@ Antigravity u otras apps Electron profesionales.
 
 ```
 ┌─────────────────────────────────────────────┐
-│         SpecterOSINT Desktop (.exe)         │
+│         SpecterOSINT Desktop (Win/mac/Linux) │
 │                                             │
 │  Electron UI  ◀──HTTP/SSE──▶  Engine :8787  │
 │  (React)        REST + SSE    (Python       │
@@ -43,44 +48,68 @@ Detalle completo en [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Inicio rápido (desarrollo)
 
 Requisitos: Node 20+, Python 3.11+ (o [uv](https://docs.astral.sh/uv/)).
+Funciona en Windows, macOS y Linux.
 
 ```bash
 # 1. Instalar dependencias JS + preparar venv del engine (postinstall)
 npm install
 
 # 2. Dependencias Python (si usas uv, o pip con el venv del engine)
-uv pip install --python .venv/Scripts/python.exe -e . 
+uv pip install --python .venv/Scripts/python.exe -e .   # Windows
+uv pip install --python .venv/bin/python -e .           # macOS / Linux
 #    –o–  pip install -r engine/requirements.txt
 
 # 3. Ejecutar la app en modo dev (arranca el engine automáticamente)
 npm run dev
 ```
 
-## Empaquetar el .exe de Windows
+## Empaquetar instaladores
+
+El motor se compila con PyInstaller (onefile) y el instalador con
+electron-builder. **PyInstaller no cross-compila**: cada plataforma produce su
+propio binario, así que empaqueta en la plataforma destino (o deja que la CI de
+release lo haga por ti en runners nativos).
 
 ```bash
 # 1. Binario del engine (PyInstaller onefile)
-.venv/Scripts/python.exe scripts/build-engine.py
-#    → dist-engine/specter-engine.exe
+#    Windows: dist-engine/specter-engine.exe
+#    macOS / Linux: dist-engine/specter-engine
+npm run engine:build
 
-# 2. Instalador NSIS
-npm run dist:win
-#    → desktop/release/SpecterOSINT-<version>-setup.exe
+# 2. Instalador de la plataforma en la que estás
+npm run dist:win     # → desktop/release/SpecterOSINT-<ver>-win-x64-setup.exe (NSIS)
+npm run dist:mac     # → desktop/release/SpecterOSINT-<ver>-mac-<arch>.dmg / .zip
+npm run dist:linux   # → desktop/release/SpecterOSINT-<ver>-linux-x64.AppImage / .deb
 ```
 
-El instalador es por-usuario (no pide admin), crea acceso directo y empaqueta el
-motor como recurso: no requiere Python instalado en la máquina destino.
+El instalador de Windows es por-usuario (no pide admin) y crea acceso directo.
+En las tres plataformas el motor viaja como recurso: **no requiere Python
+instalado en la máquina destino**. Los datos del usuario (casos, dossiers,
+clave del ledger) viven en el directorio de datos de la app
+(`%APPDATA%` en Windows, `~/Library/Application Support` en macOS,
+`~/.config` en Linux), fuera del bundle, y sobreviven a las actualizaciones.
+
+> **macOS**: los instaladores no están firmados ni notarizados todavía. Al
+> abrir la app por primera vez hay que permitirla en Ajustes → Privacidad y
+> seguridad. Para distribución sin fricción hace falta un certificado
+> Developer ID y notarización.
 
 ## Engine standalone (sin Electron)
 
 El motor es útil por sí mismo (CI, servidores, scripting):
 
 ```bash
+# Genera un token para esta sesión (bash / zsh / PowerShell).
+export SPECTER_ENGINE_TOKEN=$(python -c "import secrets; print(secrets.token_hex(32))")
 python -m engine.http_server --port 8787
-# REST:   curl http://127.0.0.1:8787/cases
-# SSE:    curl -N http://127.0.0.1:8787/events
+# En otra terminal, reutiliza el mismo token:
+curl -H "Authorization: Bearer $SPECTER_ENGINE_TOKEN" http://127.0.0.1:8787/cases
+curl -N "http://127.0.0.1:8787/events?token=$SPECTER_ENGINE_TOKEN"
 # OpenAPI (Swagger UI): http://127.0.0.1:8787/docs
 ```
+
+En PowerShell el equivalente es `$env:SPECTER_ENGINE_TOKEN = python -c "..."` y
+`curl.exe` en lugar de `curl`.
 
 ## Uso del agente desde la API
 
@@ -105,7 +134,7 @@ responde con `POST /agent/permissions/respond {request_id, decision}`.
 | `packages/sdk` | `@specter/sdk`, cliente TypeScript tipado (HTTP + SSE) |
 | `desktop/` | App Electron (main / preload / renderer React) |
 | `scripts/` | postinstall, build del engine (PyInstaller), smoke test |
-| `tests/` | Suite pytest (kernel + agente + contrato HTTP, 27 ficheros) |
+| `tests/` | Suite pytest (kernel + agente + contrato HTTP, 37 ficheros) |
 
 ## Scripts
 
@@ -123,7 +152,9 @@ responde con `POST /agent/permissions/respond {request_id, decision}`.
 | `npm run smoke:engine` | Smoke test E2E del engine HTTP |
 | `npm run verify` | Todo lo anterior en cadena (puerta de release) |
 | `pytest` | Tests del kernel forense |
-| `npm run dist:win` | Instalador Windows (.exe NSIS) |
+| `npm run dist:win` | Instalador Windows (.exe NSIS por-usuario) |
+| `npm run dist:mac` | Instalador macOS (.dmg + .zip, x64/arm64) |
+| `npm run dist:linux` | Instalador Linux (AppImage + .deb) |
 | `python -m engine.http_server` | Motor headless standalone |
 
 ## Estado y roadmap
@@ -131,8 +162,13 @@ responde con `POST /agent/permissions/respond {request_id, decision}`.
 **H1 (actual)**: plataforma desktop operativa — engine HTTP con SSE, agente
 multi-provider con permission gate, grafo, cadena de custodia y dossiers.
 
+**Preservación y análisis implementados**: hash WARC registrado en el ledger,
+transporte TLS impersonado en los colectores que usan `httpx_transport`, resolución
+Fellegi-Sunter explicable, puntuación Almirantazgo y cronolocalización solar. Consulta
+los límites de integridad y uso en [LEGAL.md](LEGAL.md).
+
 Pendientes en [ARCHITECTURE.md](ARCHITECTURE.md#roadmap): grafo interactivo
-(drag/filtros/timeline), export STIX/TAXII, modo equipo, plugins y firma de código.
+(drag/filtros/timeline), integración TAXII, modo equipo, plugins y firma de código.
 
 ## Licencia
 

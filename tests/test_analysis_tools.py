@@ -117,3 +117,110 @@ def test_dossier_md_incluye_relaciones_con_confianza(engine, tmp_path) -> None:
     md = pathlib.Path(out).read_text(encoding="utf-8")
     assert "## 2b. Relaciones con Confianza" in md
     assert "USES_ALIAS" in md and "70%" in md and "90%" in md
+
+
+def test_dossier_md_fiabilidad_almirantazgo_y_graphml(engine, tmp_path) -> None:
+    import specter.server as server
+    from specter.osint_core.admiralty import needs_corroboration, rate_source
+    from specter.osint_core.graph import OSINTGraph
+    from specter.visualizer.exporter import DossierExporter
+
+    assert rate_source("dns_collector") == "B"
+    assert rate_source("web_search_collector") == "D"
+    assert rate_source("inexistente") == "F"
+    assert needs_corroboration(0.9) is True and needs_corroboration(0.7) is False
+
+    case_id, _, _ = _seed_chain(engine)
+    json.loads(
+        server.link_entities(case_id, "alias:alice", "domain:real.dev", "CORRELATED_WITH", 0.8, "t")
+    )
+    out = DossierExporter(engine.db).export_markdown(case_id, tmp_path / "d2.md")
+    md = pathlib.Path(out).read_text(encoding="utf-8")
+    assert "## 2c. Fiabilidad de Fuentes (Almirantazgo OTAN)" in md
+
+    gexf = DossierExporter(engine.db).export_graphml(case_id, tmp_path / "g.graphml")
+    content = pathlib.Path(gexf).read_text(encoding="utf-8")
+    assert "<graphml" in content and "alias:alice" in content
+
+    metrics = OSINTGraph(engine.db).analyze_metrics(case_id)
+    assert isinstance(metrics["communities"], list)
+    assert sum(c["size"] for c in metrics["communities"]) == metrics["total_nodes"]
+
+
+def test_tempo_jitter_y_proxies(monkeypatch) -> None:
+    import asyncio
+
+    from specter.osint_core.tempo import jitter_sleep, proxy_configured
+
+    async def _run() -> float:
+        return await jitter_sleep(0.01, spread=0.001)
+
+    delay = asyncio.get_event_loop_policy().new_event_loop().run_until_complete(_run())
+    assert 0.0 < delay < 1.0
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.test:8080")
+    assert proxy_configured().get("HTTPS_PROXY") == "http://proxy.test:8080"
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    assert proxy_configured() == {}
+
+
+def test_proxy_rotator_round_robin_y_cuarentena(monkeypatch) -> None:
+    """El pool reparte salidas y pena temporalmente las que fallan (P2)."""
+    from specter.osint_core.tempo import (
+        MAX_FAILURES_BEFORE_QUARANTINE,
+        ProxyRotator,
+        reset_proxy_rotator,
+    )
+
+    monkeypatch.delenv("SPECTER_PROXY_POOL", raising=False)
+    reset_proxy_rotator()
+
+    rotator = ProxyRotator(["http://p1:8080", "http://p2:8080", "http://p3:8080"])
+    picks = [rotator.next() for _ in range(6)]
+    assert picks == [
+        "http://p1:8080",
+        "http://p2:8080",
+        "http://p3:8080",
+        "http://p1:8080",
+        "http://p2:8080",
+        "http://p3:8080",
+    ]
+
+    # Fallos repetidos → cuarentena; el resto del pool sigue sirviendo.
+    for _ in range(MAX_FAILURES_BEFORE_QUARANTINE):
+        rotator.mark_failure("http://p1:8080")
+    assert "http://p1:8080" in rotator.status()["quarantined"]
+    remaining = {rotator.next() for _ in range(10)}
+    assert "http://p1:8080" not in remaining
+
+    # Éxito limpia fallos y cuarentena.
+    rotator.mark_success("http://p1:8080")
+    assert "http://p1:8080" not in rotator.status()["quarantined"]
+
+    # Pool vacío → None (el transporte cae al env individual o salida directa).
+    assert ProxyRotator([]).next() is None
+    assert ProxyRotator.from_env() is not None
+
+    reset_proxy_rotator()
+
+
+def test_transport_prefiere_pool_sobre_env(monkeypatch) -> None:
+    """Con pool activo, el transporte rota; sin pool, cae al env individual."""
+    import specter.httpx_transport as transport
+    from specter.osint_core.tempo import reset_proxy_rotator
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://env-proxy:9")
+    monkeypatch.setenv("SPECTER_PROXY_POOL", "http://pool-a:1,http://pool-b:2")
+    reset_proxy_rotator()
+
+    first = transport._proxy()
+    second = transport._proxy()
+    assert {first, second} == {"http://pool-a:1", "http://pool-b:2"}
+
+    monkeypatch.delenv("SPECTER_PROXY_POOL", raising=False)
+    reset_proxy_rotator()
+    assert transport._proxy() == "http://env-proxy:9"
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    assert transport._proxy() is None
+    reset_proxy_rotator()

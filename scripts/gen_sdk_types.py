@@ -115,11 +115,15 @@ class _EphemeralEngine:
 
     def __enter__(self) -> str:
         import os
+        import secrets
 
         env = dict(os.environ)
         env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
         env["SPECTER_DATA_DIR"] = str(Path(self.tmp.name) / "data")
         env["SPECTER_REPORTS_DIR"] = str(Path(self.tmp.name) / "reports")
+        # El engine exige token para arrancar (fail-closed). /openapi.json es
+        # ruta pública, así que basta con que exista: no hay que enviarlo.
+        env["SPECTER_ENGINE_TOKEN"] = secrets.token_hex(32)
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "engine.http_server", "--port", str(PORT)],
             cwd=ROOT,

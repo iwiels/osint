@@ -17,7 +17,9 @@ function tryPython(cmd) {
 function main() {
   if (process.env.SPECTER_SKIP_ENGINE_SETUP === "1") return;
 
-  const python = ["python", "py"].find(tryPython);
+  // Orden por plataforma: en Windows "python"/"py"; en macOS/Linux "python3"
+  // (a menudo no existe un "python" a secas). Se prueba el primero que responda.
+  const python = ["python", "python3", "py"].find(tryPython);
   if (!python) {
     console.warn("[specter] Python 3.11+ no encontrado; omitiendo setup del engine.");
     return;

@@ -5,9 +5,9 @@ Convierte las operaciones del navegador (`stealth_browser`) en herramientas
 forenses de primera clase. Lo que la CLI de DevTools de Google (chrome-devtools
 mcp) hace por debugging genérico, aquí se hace orientado a investigación:
 
-  1. CADA captura se sella en la cadena de custodia (bloque HMAC + hash del
-     payload) cuando hay caso activo: la evidencia visual/textual es verificable
-     ante terceros, no una captura efímera.
+  1. CADA captura se registra en el ledger por caso con hash y, si hay clave,
+     HMAC. El verificador necesita la clave compartida; esto no es una firma
+     pública ni certifica por sí solo la admisibilidad de la evidencia.
   2. El contenido extraído pasa por el parser de entidades del kernel: los
      datos no solo vuelven al agente, entran al grafo del caso.
   3. La capa anti-bot es explícita y consultable: detección de bloqueo
@@ -185,6 +185,32 @@ async def osint_rotate_identity() -> str:
         },
         indent=2,
     )
+
+
+async def osint_capture_warc(
+    url: str,
+    case_id: str | None = None,
+    max_resources: int = 80,
+    max_body_mb: int = 3,
+    timeout: int = 40,
+) -> str:
+    """Guarda en WARC las solicitudes y respuestas HTTP que Chromium expuso.
+
+    No es captura de paquetes; algunos cuerpos faltan o se truncan y quedan
+    indicados en el manifiesto. WARC facilita el replay, pero no certifica la
+    cadena de custodia. Con `case_id`, el hash del archivo se registra en el
+    ledger local.
+    """
+    from specter.collectors.warc_capture import capture_warc
+
+    result = await capture_warc(
+        url,
+        case_id=case_id,
+        max_resources=max_resources,
+        max_body_bytes=int(max_body_mb * 1024 * 1024),
+        timeout_s=float(timeout),
+    )
+    return json.dumps(result, indent=2, ensure_ascii=False)
 
 
 async def osint_browser_status() -> str:

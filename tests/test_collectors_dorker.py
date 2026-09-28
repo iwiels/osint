@@ -101,15 +101,26 @@ async def test_document_hunter_clasifica_consultas_y_deduplica(monkeypatch):
     assert report["pastes_and_mentions"] == ["https://pastebin.com/xyz"]
     assert report["web_mentions"] == ["https://news.test/alice", "https://github.com/alice"]
     assert stub.calls == ["https://files.test/secret.pdf", "https://files.test/report.pdf"]
-    assert router.count(r"duckduckgo") == 3
+    # 3 base + 3 dorks de repositorios de documentos (Scribd/Studocu/...).
+    assert router.count(r"duckduckgo") == 6
 
     assert result.source_target == "alice"
-    assert result.metadata == {
+    # Las claves estables del metadata; el diagnóstico de búsquedas se
+    # verifica aparte (una entrada por query, sin fallos de transporte).
+    metadata = dict(result.metadata)
+    diagnostics = metadata.pop("search_diagnostics")
+    assert metadata == {
         "pdfs_discovered": 2,
         "leaks_discovered": 1,
         "web_mentions_discovered": 2,
         "official_mentions_discovered": 0,
+        "repository_mentions_discovered": 2,
+        "seeds_pivoted": [],
+        "context_tld": "com",
+        "searches_attempted": 6,
+        "search_failures": 0,
     }
+    assert len(diagnostics) == 6
 
 
 async def test_document_hunter_tipifica_nodo_raiz_y_menciones(monkeypatch):
@@ -122,10 +133,10 @@ async def test_document_hunter_tipifica_nodo_raiz_y_menciones(monkeypatch):
 
     mentions = [e for e in result.entities if e.type == EntityType.SOCIAL_PROFILE]
     assert {m.value for m in mentions} == {"https://github.com/alice"}
-    assert all(m.confidence == 0.85 for m in mentions)
+    assert all(m.confidence == 0.5 for m in mentions)
     mention_ids = {m.id for m in mentions}
     mention_edges = [r for r in result.relations if r.target_id in mention_ids]
-    assert mention_edges and all(r.confidence == 0.85 for r in mention_edges)
+    assert mention_edges and all(r.confidence == 0.5 for r in mention_edges)
 
     artifact = next(e for e in result.entities if e.type == EntityType.FILE_ARTIFACT)
     pdf_edge = next(r for r in result.relations if r.target_id == artifact.id)
@@ -162,13 +173,134 @@ async def test_document_hunter_sin_resultados(monkeypatch):
 
     result = await _hunter(_StubForensics()).collect("alice")
 
-    assert result.metadata == {
+    # Con el buscador caído: cada query queda registrada como fallo de
+    # transporte, sin reventar la campaña documental.
+    metadata = dict(result.metadata)
+    diagnostics = metadata.pop("search_diagnostics")
+    assert metadata == {
         "pdfs_discovered": 0,
         "leaks_discovered": 0,
         "web_mentions_discovered": 0,
         "official_mentions_discovered": 0,
+        "repository_mentions_discovered": 0,
+        "seeds_pivoted": [],
+        "context_tld": "com",
+        "searches_attempted": 6,
+        "search_failures": 6,
     }
-    assert [e.type for e in result.entities] == [EntityType.ALIAS]
+    assert len(diagnostics) == 6
+    assert all(d["status"] == "error" for d in diagnostics)
+
+
+def _seed_pivot_responder(request: httpx.Request) -> httpx.Response:
+    """DDG falso que distingue la búsqueda del pivote de la búsqueda base."""
+    query = unquote(request.content.decode("utf-8"))
+    if "11223344" in query:
+        body = _redirect("https://files.test/codigo-universitario.pdf")
+    else:
+        body = PDF_HTML
+    return httpx.Response(status_code=200, text=body, request=request)
+
+
+async def test_document_hunter_pivota_por_identificador_del_contexto(monkeypatch):
+    """El pivot loop: un código hallado en el caso dispara su propia búsqueda."""
+    router = patch_httpx(
+        monkeypatch, MockRouter().add_responder("POST", r"duckduckgo", _seed_pivot_responder)
+    )
+
+    result = await _hunter(_StubForensics()).collect(
+        "Carlos Mendoza", context="codigo universitario 11223344 en el expediente"
+    )
+
+    assert result.metadata["seeds_pivoted"] == ["11223344"]
+    pivots = [e for e in result.entities if e.attributes.get("bucket") == "pivot"]
+    assert any(e.value == "https://files.test/codigo-universitario.pdf" for e in pivots)
+    assert pivots[0].attributes["seed"] == "11223344"
+    # La query del pivote llegó al buscador además de las 3 base + 3 repos.
+    assert router.count(r"duckduckgo") == 7
+
+
+def test_seed_pivots_filtra_el_propio_target_y_duplicados():
+    from specter.collectors.dorker import _seed_pivots
+
+    seeds = _seed_pivots(
+        "11223344", "email cmendozagarcia@ejemplo.test y código 11223344, tel 988776655"
+    )
+    assert "11223344" not in seeds  # el target nunca es pivote de sí mismo
+    assert "11223344" not in seeds[1:]  # y no se duplica
+    assert "cmendozagarcia@ejemplo.test" in seeds
+    assert "988776655" in seeds  # 9 dígitos está en el rango 6-12
+
+
+async def test_document_hunter_recupera_pdf_caido_desde_wayback(monkeypatch):
+    """Un 403/Cloudflare no mata el documento: Wayback antes de "irrecuperable"."""
+
+    class _FlakyForensics:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def collect(self, target: str, **kwargs: object) -> CollectorResult:
+            self.calls.append(target)
+            if target.startswith("http://web.archive.org"):
+                node = EntityNode.create(
+                    type=EntityType.FILE_ARTIFACT,
+                    value="sha256:wayback",
+                    label="File: secret.pdf (wayback)",
+                    attributes={"filename": "secret.pdf"},
+                )
+                return CollectorResult(
+                    collector_name="file_forensics", source_target=target, entities=[node]
+                )
+            raise RuntimeError("HTTP 403")
+
+    def wayback_yes(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            json={
+                "archived_snapshots": {
+                    "closest": {
+                        "available": True,
+                        "url": "http://web.archive.org/web/2024/https://files.test/secret.pdf",
+                    }
+                }
+            },
+            request=request,
+        )
+
+    router = MockRouter().add_responder("POST", r"duckduckgo", _ddg_responder)
+    router.add_responder("GET", r"archive.org/wayback", wayback_yes)
+    patch_httpx(monkeypatch, router)
+    flaky = _FlakyForensics()
+
+    result = await _hunter(flaky).collect("alice")
+
+    assert flaky.calls[0] == "https://files.test/secret.pdf"
+    assert flaky.calls[1].startswith("http://web.archive.org/web/")
+    report = json.loads(result.raw_payload)
+    # Ambos PDFs fallan y ambos se recuperan desde Wayback.
+    assert set(report["wayback_recovered"]) == {
+        "https://files.test/secret.pdf",
+        "https://files.test/report.pdf",
+    }
+    assert not any(k.startswith("error_") for k in report)
+
+
+async def test_document_hunter_wayback_sin_snapshot_registra_error(monkeypatch):
+    """Sin snapshot disponible, el error original se registra como antes."""
+
+    def wayback_empty(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=200, json={"archived_snapshots": {}}, request=request)
+
+    router = MockRouter().add_responder("POST", r"duckduckgo", _ddg_responder)
+    router.add_responder("GET", r"archive.org/wayback", wayback_empty)
+    patch_httpx(monkeypatch, router)
+    stub = _StubForensics(fail_on="https://files.test/secret.pdf")
+
+    result = await _hunter(stub).collect("alice")
+
+    report = json.loads(result.raw_payload)
+    errors = [k for k in report if k.startswith("error_")]
+    assert len(errors) == 1
 
 
 async def test_document_hunter_dni_como_documento_y_fuentes_oficiales(monkeypatch):
@@ -182,8 +314,8 @@ async def test_document_hunter_dni_como_documento_y_fuentes_oficiales(monkeypatc
     root = result.entities[0]
     assert root.type == EntityType.DOCUMENT_ID and root.id == "document_id:99999999"
 
-    # 3 consultas base + 1 de fuentes oficiales AR (Boletín Oficial, InfoLEG, PJN).
-    assert router.count(r"duckduckgo") == 4
+    # 3 base + 3 repositorios + 1 oficial (DNI → raíz DOCUMENT_ID, TLD genérico).
+    assert router.count(r"duckduckgo") == 7
     report = json.loads(result.raw_payload)
     assert report["official_mentions"] == [
         "https://news.test/alice",

@@ -124,14 +124,14 @@ async def test_person_collector_with_active_search(temp_db):
     collector = PersonInvestigator()
     mock_search_result = CollectorResult(
         collector_name="web_search",
-        source_target='"Josue Alejandro Pizango Chang"',
+        source_target='"Carlos Andres Mendoza Garcia"',
         entities=[
             EntityNode.create(EntityType.ALIAS, "root"),
             EntityNode.create(
                 EntityType.DOMAIN,
-                "https://unmsm.edu.pe/estudiantes/josue-pizango",
+                "https://universidad.test/estudiantes/carlos-mendoza",
                 attributes={
-                    "title": "Josue Alejandro Pizango Chang - UNMSM Base 22",
+                    "title": "Carlos Andres Mendoza Garcia - Universidad Base 22",
                     "snippet": "Estudiante de ingeniería de sistemas en la universidad.",
                 },
             ),
@@ -140,7 +140,7 @@ async def test_person_collector_with_active_search(temp_db):
                 "https://es.scribd.com/document/12345/trabajo-grupal",
                 attributes={
                     "title": "Trabajo de Computación en la Nube - Scribd",
-                    "snippet": "Autores: Josue Pizango Chang y otros.",
+                    "snippet": "Autores: Carlos Mendoza Garcia y otros.",
                 },
             ),
             EntityNode.create(
@@ -148,7 +148,7 @@ async def test_person_collector_with_active_search(temp_db):
                 "https://universidad.test/profesores/otra-mencion",
                 attributes={
                     "title": "Facultad de Sistemas",
-                    "snippet": "Mención del alumno Josue.",
+                    "snippet": "Mención del alumno Carlos.",
                 },
             ),
         ],
@@ -157,11 +157,11 @@ async def test_person_collector_with_active_search(temp_db):
     )
 
     with patch(
-        "specter.collectors.web.WebSearchCollector.collect",
+        "specter.collectors.web.WebSearchCollector.collect_many",
         new_callable=AsyncMock,
         return_value=mock_search_result,
     ):
-        res = await collector.collect("Josue Alejandro Pizango Chang", execute_search=True)
+        res = await collector.collect("Carlos Andres Mendoza Garcia", execute_search=True)
 
         academic_orgs = [
             e for e in res.entities if e.type == EntityType.ORGANIZATION and e.value == "universidad.test"

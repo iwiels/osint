@@ -191,3 +191,75 @@ async def test_run_agent_marca_error(tmp_path, monkeypatch) -> None:
     sessions = db.list_agent_sessions()
     assert len(sessions) == 1 and sessions[0].status == "error"
     assert db.get_agent_session_messages(sessions[0].session_id)[0].role == "user"
+
+
+async def test_run_agent_reutiliza_session_id_multi_turn(tmp_path, monkeypatch) -> None:
+    db = reset_services(str(tmp_path / "multi.db"))
+    captured_requests: list[dict] = []
+
+    def mock_handler(req: httpx.Request) -> httpx.Response:
+        data = json.loads(req.content.decode("utf-8"))
+        captured_requests.append(data)
+        resp_msg = {"role": "assistant", "content": f"Respuesta a {len(captured_requests)}"}
+        return httpx.Response(
+            status_code=200,
+            json={"choices": [{"message": resp_msg}]},
+            request=req,
+        )
+
+    router = MockRouter().add_responder("POST", r"fake\.llm", mock_handler)
+    patch_httpx(monkeypatch, router)
+
+    async def emit(kind: str, payload: dict) -> None:
+        return None
+
+    # Primer turno: sin session_id explícito
+    res1 = await agent_module.run_agent(
+        message="primer prompt",
+        case_id="case-1",
+        provider="ollama",
+        model=None,
+        api_key=None,
+        base_url=LLM_BASE,
+        max_iterations=2,
+        emit=emit,
+        stream=False,
+        plan_first=False,
+    )
+    sess_id = res1["session_id"]
+
+    # Segundo turno: pasando el mismo session_id
+    res2 = await agent_module.run_agent(
+        message="segundo prompt",
+        case_id="case-1",
+        provider="ollama",
+        model=None,
+        api_key=None,
+        base_url=LLM_BASE,
+        max_iterations=2,
+        emit=emit,
+        stream=False,
+        plan_first=False,
+        session_id=sess_id,
+    )
+
+    assert res2["session_id"] == sess_id
+    # Sólo 1 sesión registrada en la base de datos para este caso/chat
+    sessions = db.list_agent_sessions("case-1")
+    assert len(sessions) == 1
+    assert sessions[0].session_id == sess_id
+
+    # La transcripción debe contener ambos turnos en orden
+    msgs = db.get_agent_session_messages(sess_id)
+    roles = [m.role for m in msgs]
+    assert roles == ["user", "assistant", "user", "assistant"]
+    assert msgs[0].content == "primer prompt"
+    assert msgs[2].content == "segundo prompt"
+
+    # Y la segunda llamada al LLM debe haber recibido el contexto del turno anterior
+    second_llm_messages = captured_requests[1]["messages"]
+    roles_in_payload = [m["role"] for m in second_llm_messages]
+    assert "user" in roles_in_payload and "assistant" in roles_in_payload
+    contents = [m["content"] for m in second_llm_messages]
+    assert "primer prompt" in contents
+    assert "segundo prompt" in contents

@@ -271,7 +271,6 @@ export function SessionQuestionDock({
   onSubmit?: () => void;
 }) {
   const clear = useStore((s) => s.setPendingQuestion);
-  const pushMessage = useStore((s) => s.pushMessage);
   const [activeTab, setActiveTab] = useState(0);
   // Soporta opciones múltiples y selección única por pregunta
   const [picked, setPicked] = useState<Record<number, string[]>>({});
@@ -325,18 +324,10 @@ export function SessionQuestionDock({
       if (free && !out.includes(free)) out.push(free);
       return out;
     });
-    pushMessage({
-      role: "system",
-      content: `Analista respondió ${answers.flat().length} respuesta(s) a ${request.questions.length} pregunta(s).`,
-    });
     void respond(answers);
   };
 
   const handleSkip = () => {
-    pushMessage({
-      role: "system",
-      content: "Preguntas del agente omitidas: continúa sin respuestas.",
-    });
     void respond(request.questions.map(() => []));
   };
 

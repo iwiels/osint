@@ -23,9 +23,22 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from specter.collectors.base import BaseCollector
+from specter.collectors.threatintel_enhanced import (
+    CensysCollector,
+    HaveIBeenPwnedCollector,
+    ShodanCollector,
+    VirusTotalCollector,
+)
 
 ENTRY_POINT_GROUP = "specter.collectors"
 BUILTIN_ORIGIN = "builtin"
+
+ENHANCED_COLLECTORS = (
+    ShodanCollector,
+    CensysCollector,
+    VirusTotalCollector,
+    HaveIBeenPwnedCollector,
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +61,10 @@ class CollectorRegistry:
         spec = CollectorSpec(name=str(name), instance=instance, origin=origin)
         self._collectors[spec.name] = spec
         return spec
+
+    def register_enhanced_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
+        """Registra los colectores avanzados (Shodan, Censys, VirusTotal, HIBP)."""
+        return [self.register(cls(), origin=origin) for cls in ENHANCED_COLLECTORS]
 
     def unregister(self, name: str) -> bool:
         return self._collectors.pop(name, None) is not None
@@ -97,3 +114,15 @@ class CollectorRegistry:
             self.register(instance, origin=f"plugin:{entry.name}")
             loaded.append(str(entry.name))
         return loaded
+
+
+def create_default_registry() -> CollectorRegistry:
+    """Crea una instancia de CollectorRegistry con los colectores base registrados."""
+    from specter.collectors.attack_surface import AttackSurfaceCollector
+
+    reg = CollectorRegistry()
+    reg.register(AttackSurfaceCollector())
+    return reg
+
+
+default_registry = create_default_registry()

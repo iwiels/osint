@@ -47,7 +47,7 @@ export interface PanelState {
   evidence: boolean;
 }
 
-export type MainTab = "chat" | "graph" | "timeline" | "correlations" | "ledger";
+export type MainTab = "graph" | "timeline" | "correlations" | "ledger";
 
 /**
  * Umbral de ventana estrecha por panel: por debajo, el panel arranca plegado y
@@ -55,8 +55,8 @@ export type MainTab = "chat" | "graph" | "timeline" | "correlations" | "ledger";
  * Ctrl+J). El chat central nunca se estrangula entre los dos paneles.
  */
 export const PANEL_BREAKPOINTS: Record<keyof PanelState, number> = {
-  sidebar: 1100,
-  evidence: 1280,
+  sidebar: 960,
+  evidence: 768,
 };
 
 /** Estado inicial del armazón según el ancho de la ventana donde arrancamos. */
@@ -135,6 +135,7 @@ interface SpecterState {
   closeStream: () => void;
   setPlan: (steps: PlanStep[] | null) => void;
   setUsage: (usage: AgentUsage | null) => void;
+  setChat: (chat: ChatMessage[]) => void;
   clearChat: () => void;
   startToolCall: (callId: string, tool: string, args?: unknown) => void;
   completeToolCall: (callId: string, tool: string, result: string) => void;
@@ -148,14 +149,23 @@ interface SpecterState {
   setPendingQuestion: (q: QuestionAskedPayload | null) => void;
 
   // Historial de conversaciones del agente (persistido en el engine)
+  activeSessionId: string | null;
+  setActiveSessionId: (id: string | null) => void;
+  startNewSession: () => void;
   agentSessions: AgentSession[];
   setAgentSessions: (s: AgentSession[]) => void;
   /** Transcripción en vista (null = chat en vivo). El chat vivo se conserva. */
   historyView: { session_id: string; messages: ChatMessage[] } | null;
   setHistoryView: (v: { session_id: string; messages: ChatMessage[] } | null) => void;
+  /** Contador de versión de datos del caso (grafo, ledger, timeline, correlaciones). */
+  caseDataVersion: number;
+  bumpCaseData: () => void;
   /** Contador: el raíl recarga sesiones cuando cambia (tras cada run). */
   sessionsVersion: number;
   bumpSessions: () => void;
+  /** Modal de ajustes del sistema (Ctrl+, o botón en cabecera/compositor). */
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
 }
 
 function newMessageId(): string {
@@ -171,7 +181,18 @@ function getInitialEngineUrl(): string {
   return "http://127.0.0.1:8787";
 }
 
-export const useStore = create<SpecterState>((set) => ({
+function getInitialCaseId(): string | null {
+  if (typeof window !== "undefined") {
+    try {
+      return localStorage.getItem("specter:activeCaseId") || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export const useStore = create<SpecterState>((set, get) => ({
   panels: initialPanels(),
   togglePanel: (panel) =>
     set((s) => ({ panels: { ...s.panels, [panel]: !s.panels[panel] } })),
@@ -187,18 +208,38 @@ export const useStore = create<SpecterState>((set) => ({
   setEngineHealth: (h) => set({ engineHealth: h }),
 
   cases: [],
-  activeCaseId: null,
-  activeTab: "chat",
+  activeCaseId: getInitialCaseId(),
+  activeTab: "graph",
   setCases: (cases) => set({ cases }),
-  setActiveCase: (caseId) =>
+  setActiveCase: (caseId) => {
+    if (typeof window !== "undefined") {
+      try {
+        if (caseId) localStorage.setItem("specter:activeCaseId", caseId);
+        else localStorage.removeItem("specter:activeCaseId");
+      } catch {
+        // ignore
+      }
+    }
+    const current = get().activeCaseId;
+    if (current === caseId && caseId !== null) {
+      get().bumpCaseData();
+      return;
+    }
     set({
       activeCaseId: caseId,
+      activeSessionId: null,
       graph: null,
       ledger: null,
       timeline: null,
       correlations: null,
       attestation: null,
-    }),
+      chat: [],
+      historyView: null,
+      plan: null,
+      usage: null,
+    });
+    get().bumpCaseData();
+  },
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   graph: null,
@@ -256,6 +297,7 @@ export const useStore = create<SpecterState>((set) => ({
     })),
   setPlan: (plan) => set({ plan }),
   setUsage: (usage) => set({ usage }),
+  setChat: (chat) => set({ chat }),
   clearChat: () =>
     set({
       chat: [],
@@ -352,8 +394,24 @@ export const useStore = create<SpecterState>((set) => ({
 
   agentSessions: [],
   setAgentSessions: (s) => set({ agentSessions: s }),
+  activeSessionId: null,
+  setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
+  startNewSession: () =>
+    set({
+      activeSessionId: null,
+      chat: [],
+      plan: null,
+      usage: null,
+      historyView: null,
+      pendingPermission: null,
+      pendingQuestion: null,
+    }),
   historyView: null,
   setHistoryView: (v) => set({ historyView: v }),
+  caseDataVersion: 0,
+  bumpCaseData: () => set((s) => ({ caseDataVersion: s.caseDataVersion + 1 })),
   sessionsVersion: 0,
   bumpSessions: () => set((s) => ({ sessionsVersion: s.sessionsVersion + 1 })),
+  settingsOpen: false,
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
 }));

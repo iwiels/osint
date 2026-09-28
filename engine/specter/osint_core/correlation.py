@@ -24,6 +24,9 @@ from urllib.parse import urlparse
 from specter.osint_core.database import Database
 from specter.osint_core.models import EntityNode, EntityType
 
+# Resolución probabilística Fellegi-Sunter (opcional en runtime, import perezoso
+# en el método identity_candidates_fs para no encadenar el arranque).
+
 # Tipos que representan una identidad (persona, alias o cuenta).
 IDENTITY_TYPES = frozenset(
     {
@@ -70,6 +73,23 @@ def handle_keys(entity: EntityNode) -> set[str]:
     if stripped and stripped != key:
         keys.add(stripped)
     return keys
+
+
+def _tf_tokens(entity: EntityNode) -> set[str]:
+    """Tokens de frecuencia de una entidad (los mismos que penaliza compare_pair).
+
+    El handle normalizado, el email completo en minúsculas y la parte local del
+    email normalizada: así un valor repetido (p. ej. 12 variantes de
+    'carlos.garcia' procedentes del mismo pivot) baja su propio peso de acuerdo.
+    """
+    value = entity.value.strip().lower()
+    if not value:
+        return set()
+    tokens = {normalize_handle(identity_value(entity))}
+    if entity.type.value == "EMAIL":
+        tokens.add(value)
+        tokens.add(value.split("@", 1)[0].replace("+", "").replace(".", ""))
+    return {t for t in tokens if t}
 
 
 class CorrelationEngine:
@@ -217,3 +237,113 @@ class CorrelationEngine:
                 )
             return 0.8, f"handle normalizado '{key}' repetido en {a.type.value}"
         return 0.6, f"coincidencia débil por variante numérica '{key}'"
+
+    # ------------------------------------------------------------- Fellegi-Sunter
+    def identity_candidates_fs(
+        self,
+        case_id: str,
+        match_threshold: float | None = None,
+        review_threshold: float | None = None,
+        field_weights: dict[str, float] | None = None,
+        limit: int = 50,
+    ) -> dict:
+        """Resolución de identidad probabilística (Fellegi-Sunter).
+
+        A diferencia de `identity_candidates` (heurística con scores fijos),
+        aquí cada par recibe un score log2 aditivo y explicable campo a campo:
+        R >= match_threshold → match propuesto; entre umbrales → revisión
+        humana; debajo → no coincidencia. Ver `osint_core/entity_resolution.py`.
+        """
+        from specter.osint_core.entity_resolution import (
+            DEFAULT_THRESHOLDS,
+            reset_term_frequencies,
+            set_term_frequencies,
+        )
+
+        thresholds = {**DEFAULT_THRESHOLDS}
+        if match_threshold is not None:
+            thresholds["match"] = float(match_threshold)
+        if review_threshold is not None:
+            thresholds["review"] = float(review_threshold)
+
+        entities = [
+            e
+            for e in self.db.get_case_entities(case_id)
+            if e.type in IDENTITY_TYPES and e.value.strip()
+        ]
+
+        # Ajuste de frecuencia del término (Splink: term-frequency-adjustments):
+        # un valor repetido muchas veces en el caso (12 variantes del mismo
+        # handle) no prueba identidad al acordar. Se calcula sobre los mismos
+        # tokens que produce compare_pair.
+        tf_counts: dict[str, int] = {}
+        for entity in entities:
+            for token in _tf_tokens(entity):
+                tf_counts[token] = tf_counts.get(token, 0) + 1
+        set_term_frequencies(tf_counts, total=len(entities))
+        try:
+            return self._fs_compare_batch(case_id, entities, thresholds, field_weights, limit)
+        finally:
+            reset_term_frequencies()
+
+    def _fs_compare_batch(
+        self,
+        case_id: str,
+        entities: list[EntityNode],
+        thresholds: dict[str, float],
+        field_weights: dict[str, float] | None,
+        limit: int,
+    ) -> dict:
+        """Compara los pares bloqueados con las frecuencias ya cargadas."""
+        from specter.osint_core.entity_resolution import compare_pair, explain_score
+
+        groups: dict[str, list[EntityNode]] = defaultdict(list)
+        for entity in entities:
+            for key in handle_keys(entity):
+                groups[key].append(entity)
+
+        candidates: list[dict] = []
+        seen_pairs: set[tuple[str, str]] = set()
+        for key in sorted(groups):
+            members = {e.id: e for e in groups[key]}
+            if len(members) < 2:
+                continue
+            for left, right in itertools.combinations(sorted(members), 2):
+                a, b = members[left], members[right]
+                if (a.id, b.id) in seen_pairs:
+                    continue
+                seen_pairs.add((a.id, b.id))
+                pair = compare_pair(a, b, field_weights=field_weights, thresholds=thresholds)
+                if pair.verdict == "non_match":
+                    continue
+                candidates.append(
+                    {
+                        "score": pair.probability,
+                        "weight_log2": pair.total_weight,
+                        "verdict": pair.verdict,
+                        "explanation": explain_score(pair),
+                        "comparisons": [
+                            {
+                                "field": c.field,
+                                "agreement": c.agreement_level,
+                                "weight_log2": c.weight,
+                                "detail": c.detail,
+                            }
+                            for c in pair.comparisons
+                        ],
+                        "normalized_key": key,
+                        "suggested_relation": "CORRELATED_WITH",
+                        "entities": [pair.entity_a, pair.entity_b],
+                    }
+                )
+
+        candidates.sort(key=lambda c: (-c["weight_log2"], -c["score"]))
+        return {
+            "case_id": case_id,
+            "model": "fellegi-sunter",
+            "thresholds": thresholds,
+            "analyzed_entities": len(entities),
+            "compared_pairs": len(seen_pairs),
+            "total_candidates": len(candidates),
+            "candidates": candidates[:limit],
+        }

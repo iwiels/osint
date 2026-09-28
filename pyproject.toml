@@ -5,11 +5,23 @@ description = "SpecterOSINT - Forensic Intelligence Platform (Python engine + El
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+authors = [{ name = "iwiels" }]
+keywords = [
+    "osint",
+    "forensics",
+    "intelligence",
+    "investigation",
+    "threat-intel",
+    "knowledge-graph",
+    "chain-of-custody",
+]
 dependencies = [
     "mcp[cli]>=1.3.0",
     "networkx>=3.2",
     "pydantic>=2.7.0",
     "httpx>=0.27.0",
+    "curl_cffi>=0.7.0",
+    "warcio>=1.7.4",
     "dnspython>=2.6.0",
     "pillow>=10.3.0",
     "pypdf>=4.2.0",
@@ -18,6 +30,11 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "playwright>=1.49.0",
     "patchright>=1.49.0",
+    "shodan>=1.31.0",
+    "censys>=2.3.0",
+    "holehe>=1.61",
+    "maigret>=0.1.7",
+    "diskcache>=5.6.3",
 ]
 
 [project.optional-dependencies]

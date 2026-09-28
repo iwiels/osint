@@ -1,6 +1,6 @@
 @layer components {
   [data-component="popover"] {
-    z-index: 60;
+    z-index: 100;
     width: var(--popover-width, 320px);
     max-width: calc(100vw - 24px);
     max-height: min(560px, calc(100vh - 80px));

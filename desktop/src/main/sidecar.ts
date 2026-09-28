@@ -5,7 +5,8 @@
  * Health-check con reintentos antes de declarar listo el motor.
  */
 
-import { spawn, execSync, ChildProcess } from "node:child_process";
+import { spawn, execFileSync, execSync, ChildProcess } from "node:child_process";
+import { app } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import http from "node:http";
@@ -13,6 +14,9 @@ import { randomBytes } from "node:crypto";
 
 const ENGINE_PORT = Number(process.env.SPECTER_ENGINE_PORT || 8787);
 const BASE_URL = `http://127.0.0.1:${ENGINE_PORT}`;
+
+/** Nombre del binario del motor según plataforma (PyInstaller añade .exe en Windows). */
+const ENGINE_BINARY = process.platform === "win32" ? "specter-engine.exe" : "specter-engine";
 
 export interface EngineInfo {
   baseUrl: string;
@@ -28,6 +32,24 @@ function probeHealth(timeoutMs: number): Promise<boolean> {
       res.resume();
       resolve(res.statusCode === 200);
     });
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.on("error", () => resolve(false));
+  });
+}
+
+function probeAuthenticated(timeoutMs: number, token: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.get(
+      `${BASE_URL}/cases`,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: timeoutMs },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode === 200);
+      },
+    );
     req.on("timeout", () => {
       req.destroy();
       resolve(false);
@@ -64,8 +86,20 @@ export class EngineSidecar {
       await this.killPortOccupant();
       this.spawnDevEngine();
     } else if (await probeHealth(1500)) {
-      // 1) ¿Engine ya corriendo? Solo en prod tiene sentido reutilizarlo.
-      // Requiere que el ocupante use el mismo token (SPECTER_ENGINE_TOKEN).
+      // /health es público: solo reutilizar un motor externo si la app recibió
+      // explícitamente su token y una ruta autenticada confirma que coincide.
+      if (!process.env.SPECTER_ENGINE_TOKEN) {
+        throw new Error(
+          `Ya hay un engine en ${BASE_URL}, pero no se configuró ` +
+            "SPECTER_ENGINE_TOKEN para autenticarlo.",
+        );
+      }
+      if (!(await probeAuthenticated(1500, this.token))) {
+        throw new Error(
+          `Ya hay un engine en ${BASE_URL}, pero rechazó el token configurado. ` +
+            "Configura el mismo SPECTER_ENGINE_TOKEN en ambos procesos.",
+        );
+      }
       return info("external");
     } else {
       this.spawnPackagedEngine();
@@ -92,7 +126,14 @@ export class EngineSidecar {
         // Mata el arbol (uvicorn hijo incluido)
         execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: "ignore" });
       } else {
-        child.kill("SIGTERM");
+        // POSIX: el hijo se lanza con detached=true, así que encabeza su
+        // propio grupo de procesos; matar el grupo (-pid) alcanza al uvicorn
+        // hijo igual que taskkill /T en Windows.
+        try {
+          process.kill(-child.pid, "SIGTERM");
+        } catch {
+          child.kill("SIGTERM");
+        }
       }
     } catch {
       // el proceso ya no existe
@@ -108,18 +149,26 @@ export class EngineSidecar {
     if (!(await probeHealth(800))) return;
     try {
       if (process.platform === "win32") {
-        const out = execSync(`netstat -ano | findstr :${ENGINE_PORT}`, {
+        const out = execFileSync("netstat", ["-ano"], {
           stdio: ["ignore", "pipe", "ignore"],
         }).toString();
         const pids = new Set<string>();
         for (const line of out.split("\n")) {
-          const m = line.match(/LISTENING\s+(\d+)/);
-          if (m) pids.add(m[1]);
+          const [protocol, localAddress, , state, pid] = line.trim().split(/\s+/);
+          const localPort = localAddress?.slice(localAddress.lastIndexOf(":") + 1);
+          if (
+            protocol === "TCP" &&
+            state === "LISTENING" &&
+            localPort === String(ENGINE_PORT) &&
+            pid
+          ) {
+            pids.add(pid);
+          }
         }
         for (const pid of pids) {
           if (Number(pid) !== process.pid) {
             console.log(`[engine] matando ocupante stale del puerto ${ENGINE_PORT}: pid ${pid}`);
-            execSync(`taskkill /pid ${pid} /T /F`, { stdio: "ignore" });
+            execFileSync("taskkill", ["/pid", pid, "/T", "/F"], { stdio: "ignore" });
           }
         }
       } else {
@@ -178,6 +227,8 @@ export class EngineSidecar {
         },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        // POSIX: grupo de procesos propio para poder matar el árbol en stop().
+        detached: process.platform !== "win32",
       },
     );
     this.child.stdout?.on("data", (d: Buffer) => console.log(`[engine] ${d.toString().trim()}`));
@@ -192,21 +243,27 @@ export class EngineSidecar {
 
   private spawnPackagedEngine(): void {
     const base = process.resourcesPath || path.dirname(process.execPath);
-    const exe = path.join(base, "engine", "specter-engine.exe");
+    const exe = path.join(base, "engine", ENGINE_BINARY);
     if (!fs.existsSync(exe)) {
       throw new Error(`Binario del engine no encontrado: ${exe}`);
     }
-    const userData = process.env.APPDATA || base;
+    // Directorio de datos por usuario, multiplataforma: app.getPath("userData")
+    // resuelve %APPDATA% en Windows, ~/Library/Application Support en macOS y
+    // ~/.config en Linux. Los secretos y la clave del ledger viven ahí, fuera
+    // del bundle, y sobreviven a las actualizaciones de la app.
+    const userData = app.getPath("userData");
     this.child = spawn(exe, ["--port", String(ENGINE_PORT)], {
       env: {
         ...process.env,
-        SPECTER_DATA_DIR: path.join(userData, "specter-osint", "data"),
-        SPECTER_REPORTS_DIR: path.join(userData, "specter-osint", "reports"),
+        SPECTER_DATA_DIR: path.join(userData, "data"),
+        SPECTER_REPORTS_DIR: path.join(userData, "reports"),
         // C1: el engine exige este Bearer en todo salvo /health.
         SPECTER_ENGINE_TOKEN: this.token,
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      // POSIX: grupo de procesos propio para poder matar el árbol en stop().
+      detached: process.platform !== "win32",
     });
     this.child.stdout?.on("data", (d: Buffer) => console.log(`[engine] ${d.toString().trim()}`));
     this.child.stderr?.on("data", (d: Buffer) => console.error(`[engine] ${d.toString().trim()}`));

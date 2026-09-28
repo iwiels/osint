@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -84,9 +85,19 @@ app = FastAPI(
     version=ENGINE_VERSION,
 )
 
+# CORS cerrado a orígenes locales: el renderer vive en localhost (dev) o file://
+# (prod, sin header Origin). Un sitio público no debe poder ni prefligir contra
+# el motor; la autenticación real sigue siendo el Bearer token (C1).
+_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # motor local; la autenticación real es el Bearer token
+    allow_origins=_CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
     # Sin allow_private_network: una web pública no debe pivotar al engine
@@ -107,18 +118,28 @@ _PUBLIC_PATHS = {"/health", "/openapi.json", "/docs", "/redoc"}
 async def _require_engine_token(request: Request, call_next):  # type: ignore[no-untyped-def]
     """C1: el engine solo obedece a quien presente el token del sidecar.
 
-    Sin `SPECTER_ENGINE_TOKEN` configurado el motor queda abierto (dev /
-    scripts locales); en producción el sidecar siempre genera uno aleatorio.
+    Sin `SPECTER_ENGINE_TOKEN` configurado las rutas de datos fallan cerradas;
+    el sidecar genera uno aleatorio y la API standalone requiere configurarlo.
     El stream SSE (EventSource no manda headers) puede traerlo como `?token=`.
 
     Los preflight CORS (OPTIONS) nunca traen Authorization: se dejan pasar
     para que CORSMiddleware responda; el GET/POST real sí exige el token.
     """
-    if request.method != "OPTIONS" and (request.url.path not in _PUBLIC_PATHS and _engine_token()):
+    if request.method != "OPTIONS" and request.url.path not in _PUBLIC_PATHS:
+        token = _engine_token()
+        if not token:
+            return JSONResponse(
+                {"detail": "Engine sin configurar: define SPECTER_ENGINE_TOKEN y reinicia."},
+                status_code=503,
+                headers={
+                    "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+                    "Access-Control-Allow-Headers": "authorization, content-type",
+                },
+            )
         auth = request.headers.get("authorization", "")
         query_token = request.query_params.get("token", "")
-        expected = f"Bearer {_engine_token()}"
-        sse_by_query = request.url.path == "/events" and query_token == _engine_token()
+        expected = f"Bearer {token}"
+        sse_by_query = request.url.path == "/events" and query_token == token
         if auth != expected and not sse_by_query:
             # Este 401 sale sin pasar por CORSMiddleware (este middleware es
             # externo): se le ponen los headers CORS para que el renderer vea
@@ -235,6 +256,7 @@ class CaseCreate(BaseModel):
 
 class AgentRunRequest(BaseModel):
     case_id: str | None = None
+    session_id: str | None = None
     message: str = Field(min_length=1, max_length=20000)
     provider: str = "opencode"
     model: str | None = None
@@ -273,13 +295,18 @@ class SecretUpsert(BaseModel):
 
 @app.get("/health", response_model=HealthOut)
 async def health() -> dict[str, Any]:
+    """Salud del engine (pública: el sidecar la sondea antes del token).
+
+    No expone rutas del filesystem al navegador: son información de host local
+    que una web abierta en el mismo equipo no debería poder leer sin token.
+    """
     return {
         "status": "ok",
         "engine": "specter",
         "version": ENGINE_VERSION,
         "mcp_tools": len(await get_registry_tools()),
-        "data_dir": str(DATA_DIR),
-        "reports_dir": str(REPORTS_DIR),
+        "data_dir": "",  # rutas del host solo vía endpoints autenticados
+        "reports_dir": "",  # idem
         "build_hash": _build_hash(),
         "started_at": STARTED_AT,
     }
@@ -614,6 +641,7 @@ async def agent_run(body: AgentRunRequest) -> dict[str, Any]:
             stream=body.stream,
             plan_first=body.plan_first,
             auto_approve=body.auto_approve,
+            session_id=body.session_id,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -631,6 +659,15 @@ def main() -> None:
         "imposible el engine desactualizado)",
     )
     args = parser.parse_args()
+    if not _engine_token():
+        parser.error("define SPECTER_ENGINE_TOKEN antes de iniciar el motor HTTP")
+    host = args.host.strip("[]").lower()
+    try:
+        is_loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = False
+    if not is_loopback and not _engine_token():
+        parser.error("--host no loopback requiere SPECTER_ENGINE_TOKEN configurado")
 
     # El motor en producción firma su cadena de custodia: si no hay clave local,
     # se genera aquí (0600) y el servicio nace sellando la evidencia.

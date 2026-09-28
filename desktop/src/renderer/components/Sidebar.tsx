@@ -8,7 +8,7 @@
  * concatenar clases utilitarias condicionales en el JSX.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SpecterClient } from "@specter/sdk";
 import type { AgentSession, AgentSessionMessage } from "@specter/sdk";
 import { Button, IconButton, TextArea, TextField } from "../ui";
@@ -31,6 +31,7 @@ export default function Sidebar({ client }: { client: SpecterClient }) {
   const engineOnline = useStore((s) => s.engineOnline);
   const agentSessions = useStore((s) => s.agentSessions);
   const setAgentSessions = useStore((s) => s.setAgentSessions);
+  const activeSessionId = useStore((s) => s.activeSessionId);
   const historyView = useStore((s) => s.historyView);
   const setHistoryView = useStore((s) => s.setHistoryView);
   const sessionsVersion = useStore((s) => s.sessionsVersion);
@@ -114,25 +115,67 @@ export default function Sidebar({ client }: { client: SpecterClient }) {
     store.bumpSessions();
   };
 
+  const hasRestoredCaseChatRef = useRef<string | null>(null);
+
   // Conversaciones del agente: viven en el raíl (el centro queda solo para chatear).
   const refreshSessions = useCallback(async () => {
     if (!engineOnline) return;
     try {
       const res = await client.agentSessions(activeCaseId ?? undefined, 30);
       setAgentSessions(res.sessions);
+      // Si el chat está vacío y no hay vista histórica abierta, restauramos la sesión más reciente del caso una sola vez
+      const store = useStore.getState();
+      if (
+        activeCaseId &&
+        res.sessions.length > 0 &&
+        store.chat.length === 0 &&
+        store.historyView === null &&
+        hasRestoredCaseChatRef.current !== activeCaseId
+      ) {
+        hasRestoredCaseChatRef.current = activeCaseId;
+        const latest = res.sessions[0];
+        const detail = await client.agentSession(latest.session_id);
+        const messages: ChatMessage[] = detail.messages.map((m: AgentSessionMessage) => ({
+          id: `${m.session_id}-${m.seq}`,
+          role:
+            m.role === "tool"
+              ? "tool"
+              : m.role === "assistant"
+                ? "assistant"
+                : m.role === "system"
+                  ? "system"
+                  : "user",
+          tool: m.tool ?? undefined,
+          content: m.content,
+          status: m.role === "tool" ? "completed" : undefined,
+          ts: Date.parse(m.ts) || Date.now(),
+        }));
+        store.setActiveSessionId(latest.session_id);
+        store.setChat(messages);
+      }
     } catch {
       // engine sin historial o versión previa
     }
   }, [client, activeCaseId, engineOnline, setAgentSessions]);
 
+  const prevCaseIdRef = useRef(activeCaseId);
   useEffect(() => {
-    setHistoryView(null);
+    if (prevCaseIdRef.current !== activeCaseId) {
+      prevCaseIdRef.current = activeCaseId;
+      hasRestoredCaseChatRef.current = null;
+      setHistoryView(null);
+    }
     void refreshSessions();
   }, [activeCaseId, sessionsVersion, refreshSessions, setHistoryView]);
 
   const openSession = async (session: AgentSession) => {
     try {
       const detail = await client.agentSession(session.session_id);
+      const store = useStore.getState();
+      const targetCaseId = detail.session.case_id || session.case_id || store.cases[0]?.case_id;
+      if (targetCaseId && targetCaseId !== store.activeCaseId) {
+        store.setActiveCase(targetCaseId);
+      }
       const messages: ChatMessage[] = detail.messages.map((m: AgentSessionMessage) => ({
         id: `${m.session_id}-${m.seq}`,
         role:
@@ -148,7 +191,9 @@ export default function Sidebar({ client }: { client: SpecterClient }) {
         status: m.role === "tool" ? "completed" : undefined,
         ts: Date.parse(m.ts) || Date.now(),
       }));
-      setHistoryView({ session_id: session.session_id, messages });
+      store.setActiveSessionId(session.session_id);
+      store.setChat(messages);
+      setHistoryView(null);
       setShowHistory(false);
     } catch {
       // sesión ilegible
@@ -159,6 +204,9 @@ export default function Sidebar({ client }: { client: SpecterClient }) {
     try {
       await client.deleteAgentSession(sessionId);
       const store = useStore.getState();
+      if (store.activeSessionId === sessionId) {
+        store.startNewSession();
+      }
       if (store.historyView?.session_id === sessionId) store.setHistoryView(null);
       await refreshSessions();
     } catch {
@@ -264,7 +312,7 @@ export default function Sidebar({ client }: { client: SpecterClient }) {
       <div data-slot="sidebar-sessions">
         <SessionHistory
           sessions={agentSessions}
-          currentSessionId={historyView?.session_id}
+          currentSessionId={historyView?.session_id ?? activeSessionId}
           onSelectSession={openSession}
           onDeleteSession={deleteSession}
           isOpen={showHistory}

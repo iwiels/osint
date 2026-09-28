@@ -103,7 +103,13 @@ async def test_web_search_sin_resultados(monkeypatch) -> None:
 
     result = await WebSearchCollector().collect("zzz-sin-hits")
 
-    assert result.metadata == {"query": "zzz-sin-hits", "results": 0, "ok": True}
+    # Sin hits reconocibles en ningún proveedor la búsqueda se declara
+    # UNAVAILABLE (el HTML vacío no es una "búsqueda sin resultados" fiable).
+    assert result.metadata["query"] == "zzz-sin-hits"
+    assert result.metadata["results"] == 0
+    assert result.metadata["status"] == "UNAVAILABLE"
+    assert result.metadata["ok"] is False
+    assert result.metadata["providers"]["ddg_html"]["status"] == "empty_or_unrecognized_page"
 
 
 async def test_web_search_error_de_red(monkeypatch) -> None:
@@ -120,7 +126,8 @@ async def test_web_search_error_de_red(monkeypatch) -> None:
     result = await WebSearchCollector().collect("x")
 
     assert result.metadata["ok"] is False
-    assert "ddg caído" in json.loads(result.raw_payload)["error"]
+    assert result.metadata["status"] == "UNAVAILABLE"
+    assert "ddg caído" in result.metadata["providers"]["ddg_html"]["reason"]
 
 
 async def test_web_fetch_extrae_texto(monkeypatch) -> None:
@@ -191,7 +198,11 @@ async def test_parallel_search_tolera_fallos(engine_env, monkeypatch) -> None:
 
     assert body["status"] == "COMPLETED"
     assert len(body["results"]["99999999 boletin"]["results"]) == 2
-    assert "caída parcial" in body["results"]["falla total"]["error"]
+    # La consulta fallida ya no lanza: vuelve como reporte UNAVAILABLE con la
+    # causa por proveedor en el diagnóstico.
+    failed = body["results"]["falla total"]
+    assert failed["status"] == "UNAVAILABLE"
+    assert "caída parcial" in failed["providers"]["ddg_html"]["reason"]
 
 
 async def test_parallel_search_rechaza_vacio(engine_env) -> None:

@@ -21,7 +21,7 @@ export function DialogContent({
   description,
   ...rest
 }: ComponentProps<typeof Radix.Content> & {
-  size?: "small" | "normal" | "large";
+  size?: "small" | "normal" | "large" | "x-large";
   /** Nombre accesible del diálogo. Obligatorio salvo que pases `DialogTitle`. */
   title?: string;
   description?: string;

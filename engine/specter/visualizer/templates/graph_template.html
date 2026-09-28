@@ -181,7 +181,7 @@
       <button id="btn-toggle-physics" class="btn" style="margin-top: 0; background: #374151; color: #fff;">⏸ Pausar Física</button>
       <button id="btn-fit" class="btn" style="margin-top: 0; background: #374151; color: #fff;">⛶ Centrar</button>
       {% if ledger_audit.valid %}
-        <span class="badge badge-success">✓ Cadena Inmutable Verificada ({{ ledger_audit.total_blocks }} bloques)</span>
+        <span class="badge badge-success">✓ Integridad del ledger verificada ({{ ledger_audit.total_blocks }} bloques)</span>
       {% else %}
         <span class="badge badge-warning">⚠ Riesgo de Adulteración</span>
       {% endif %}
@@ -215,6 +215,13 @@
   <script>
     const graphData = {{ graph_json | safe }};
     const auditData = {{ audit_json | safe }};
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    })[char]);
 
     const typeColors = {
       "DOMAIN": "#3b82f6",
@@ -358,27 +365,27 @@
             <div class="details-card">
               <div class="prop-row">
                 <div class="prop-label">Tipo de Entidad</div>
-                <div class="prop-value" style="color:${typeColors[n.type] || '#fff'}; font-weight:bold;">${n.type}</div>
+                <div class="prop-value" style="color:${typeColors[n.type] || '#fff'}; font-weight:bold;">${escapeHtml(n.type)}</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Valor / Target</div>
-                <div class="prop-value">${n.value}</div>
+                <div class="prop-value">${escapeHtml(n.value)}</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Identificador Canónico</div>
-                <div class="prop-value">${n.id}</div>
+                <div class="prop-value">${escapeHtml(n.id)}</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Confianza</div>
-                <div class="prop-value">${Math.round(n.confidence * 100)}%</div>
+                <div class="prop-value">${escapeHtml(Math.round(n.confidence * 100))}%</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Primera Detección (UTC)</div>
-                <div class="prop-value">${n.first_seen}</div>
+                <div class="prop-value">${escapeHtml(n.first_seen)}</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Atributos & Metadatos</div>
-                <pre>${JSON.stringify(n.attributes, null, 2)}</pre>
+                <pre>${escapeHtml(JSON.stringify(n.attributes, null, 2))}</pre>
               </div>
             </div>
           `;
@@ -395,23 +402,23 @@
             <div class="details-card">
               <div class="prop-row">
                 <div class="prop-label">Relación Forense</div>
-                <div class="prop-value" style="color:#38bdf8; font-weight:bold;">${e.relation_type}</div>
+                <div class="prop-value" style="color:#38bdf8; font-weight:bold;">${escapeHtml(e.relation_type)}</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Origen (Source)</div>
-                <div class="prop-value">${e.source}</div>
+                <div class="prop-value">${escapeHtml(e.source)}</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Destino (Target)</div>
-                <div class="prop-value">${e.target}</div>
+                <div class="prop-value">${escapeHtml(e.target)}</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Confianza</div>
-                <div class="prop-value">${Math.round(e.confidence * 100)}%</div>
+                <div class="prop-value">${escapeHtml(Math.round(e.confidence * 100))}%</div>
               </div>
               <div class="prop-row">
                 <div class="prop-label">Metadatos de Enlace</div>
-                <pre>${JSON.stringify(e.attributes, null, 2)}</pre>
+                <pre>${escapeHtml(JSON.stringify(e.attributes, null, 2))}</pre>
               </div>
             </div>
           `;

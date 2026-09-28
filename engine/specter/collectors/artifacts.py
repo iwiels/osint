@@ -10,11 +10,11 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
-import httpx
-from PIL import ExifTags, Image
+from PIL import ExifTags, Image  # noqa: F401  (Pillow: EXIF/ELA en otros flujos)
 from pypdf import PdfReader
 from specter import config as specter_config
 from specter.collectors.base import BaseCollector
+from specter.httpx_transport import http_get
 from specter.netguard import check_public_http_url, ssrf_enforce
 from specter.osint_core.models import (
     CollectorResult,
@@ -136,21 +136,22 @@ class FileForensics(BaseCollector):
         if target.startswith("http://") or target.startswith("https://"):
             if ssrf_enforce() and (blocked := check_public_http_url(target)):
                 raise ValueError(f"Bloqueada por NetGuard: {blocked}")
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(target)
-                resp.raise_for_status()
-                length = resp.headers.get("content-length")
-                if length and int(length) > ARTIFACT_MAX_BYTES:
-                    raise ValueError(f"Descarga demasiado grande ({length} bytes, máx 25MB)")
-                data = resp.content
-                if len(data) > ARTIFACT_MAX_BYTES:
-                    raise ValueError("Descarga demasiado grande (máx 25MB)")
-                import tempfile
+            # P0: descarga con impersonación TLS (curl_cffi) para análisis forense.
+            resp = await http_get(target, timeout=15.0)
+            if resp.status_code >= 400:
+                raise ValueError(f"HTTP {resp.status_code} al descargar {target}")
+            length = resp.headers.get("content-length")
+            if length and int(length) > ARTIFACT_MAX_BYTES:
+                raise ValueError(f"Descarga demasiado grande ({length} bytes, máx 25MB)")
+            data = resp.content
+            if len(data) > ARTIFACT_MAX_BYTES:
+                raise ValueError("Descarga demasiado grande (máx 25MB)")
+            import tempfile
 
-                with tempfile.NamedTemporaryFile(delete=False) as tf:
-                    tf.write(data)
-                    file_path = Path(tf.name)
-                    temp_downloaded = True
+            with tempfile.NamedTemporaryFile(delete=False) as tf:
+                tf.write(data)
+                file_path = Path(tf.name)
+                temp_downloaded = True
         else:
             if not file_path.exists():
                 raise FileNotFoundError(f"Archivo no encontrado: {target}")
@@ -197,6 +198,13 @@ class FileForensics(BaseCollector):
                 raw_report["image_metadata"] = img_meta
                 file_node.attributes.update(img_meta)
 
+                # ELA orientativa (Pillow, sin deps nuevas): recompresión q95.
+                from specter.collectors.docforensics import ela_score
+
+                ela = ela_score(data)
+                raw_report["ela"] = ela
+                file_node.attributes["ela"] = ela
+
                 if gps_coords:
                     lat, lon = gps_coords
                     geo_node = EntityNode.create(
@@ -222,6 +230,15 @@ class FileForensics(BaseCollector):
                 pdf_meta, author = self._extract_pdf_metadata(file_path)
                 raw_report["pdf_metadata"] = pdf_meta
                 file_node.attributes.update(pdf_meta)
+
+                # P1 peepdf-style: JS/OpenAction/Launch/embebidos + updates sin purgar.
+                from specter.collectors.docforensics import scan_pdf_threats
+
+                threats = scan_pdf_threats(data)
+                raw_report["pdf_threats"] = threats
+                file_node.attributes["pdf_threats"] = threats
+                if threats.get("suspicious"):
+                    file_node.attributes["threat_flag"] = True
 
                 if author:
                     person_node = EntityNode.create(

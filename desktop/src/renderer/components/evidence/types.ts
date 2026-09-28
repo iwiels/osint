@@ -19,6 +19,10 @@ export interface FGraphNode {
   y?: number;
   vx?: number;
   vy?: number;
+  isCluster?: boolean;
+  clusterCount?: number;
+  clusterParentId?: string;
+  clusterChildIds?: string[];
 }
 
 export interface FGraphLink {
@@ -43,11 +47,15 @@ export const idOf = (v: string | { id: string } | undefined): string =>
   typeof v === "object" && v !== null ? v.id : (v ?? "");
 
 export interface ForceGraphMethods {
-  zoomToFit: (ms?: number, px?: number) => void;
+  zoomToFit: (ms?: number, px?: number, nodeFilter?: (node: any) => boolean) => void;
   zoom: (zoomLevel?: number, durationMs?: number) => number | void;
+  centerAt: (x?: number, y?: number, ms?: number) => void;
+  d3Force: (forceName: string, forceFn?: any) => any;
+  d3ReheatSimulation: () => void;
 }
 
 export const TYPE_COLORS: Record<string, string> = {
+  CLUSTER: "#38bdf8",
   DOMAIN: "#45c8ff",
   SUBDOMAIN: "#6dd5ff",
   IP_ADDRESS: "#b08cff",

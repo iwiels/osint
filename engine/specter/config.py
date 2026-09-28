@@ -32,6 +32,14 @@ def data_dir() -> Path:
     return d
 
 
+def cache_dir() -> Path:
+    """Directorio de cache persistente (diskcache). Se crea si no existe."""
+    env = os.environ.get("SPECTER_CACHE_DIR")
+    d = Path(env) if env else data_dir() / "cache"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def reports_dir() -> Path:
     """Directorio de dossiers generados. Se crea si no existe."""
     env = os.environ.get("SPECTER_REPORTS_DIR")

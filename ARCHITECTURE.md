@@ -14,7 +14,7 @@
 │  │ - ventana        │  :8787   │  Python + FastAPI + uvicorn   │ │
 │  │ - ciclo de vida  │◀─────────│  - /health  /tools  /cases    │ │
 │  │ - taskkill árbol │  REST+SSE│  - /agent/run  /events (SSE)  │ │
-│  │ - token Bearer   │  +Bearer │  - registry MCP (32 tools)    │ │
+│  │ - token Bearer   │  +Bearer │  - registry MCP (40 tools)    │ │
 │  └────────┬─────────┘          │  - ledger HMAC-SHA256 + grafo │ │
 │           │ contextBridge      └───────────────────────────────┘ │
 │           ▼                                                       │
@@ -30,7 +30,7 @@
 1. **Motor headless, clientes tontos.** El motor (kernel forense) vive en su propio
    proceso y expone una API HTTP local. Electron, el CLI, OpenCode (MCP) o un script
    son solo clientes. Nada de lógica de negocio en la UI.
-2. **Registry único de tools.** Las 32 tools forenses MCP se registran una vez y se
+2. **Registry único de tools.** Las 41 tools forenses MCP se registran una vez y se
    consumen desde tres superficies: UI (REST), agente IA (function-calling) y clientes
    MCP externos (stdio, compatibilidad legada).
    Entre ellas, el navegador sigiloso OSINT (`browser_snapshot`, `browser_screenshot`,
@@ -60,11 +60,15 @@ specter-osint/
 │   ├── agent.py                #   loop agente multi-provider + permissions
 │   ├── registry.py             #   acceso unificado al registro MCP
 │   └── specter/                #   KERNEL FORENSE (inalterado, antes src/)
-│       ├── server.py           #     32 tools MCP (create_case, investigate_*…)
+│       ├── server.py           #     40 tools MCP (create_case, investigate_*…)
 │       ├── osint_core/         #     Database (SQLite/WAL), Graph (NetworkX),
-│       │                       #     ForensicLedger (SHA-256), models (Pydantic)
+│       │                       #     ForensicLedger (SHA-256), models (Pydantic),
+│       │                       #     entity_resolution (Fellegi-Sunter), admiralty
+│       │                       #     (6x6 + decay), solar (cronolocalización)
 │       ├── collectors/         #     DNS, TLS, crt.sh, RDAP, identidad (WMN 700+
 │       │                       #     plataformas), GitHub forensics, dorks, archivos
+│       │                       #     warc_capture (ISO 28500 vía CDP)
+│       ├── httpx_transport.py  #     transporte curl_cffi con impersonación TLS Chrome
 │       └── visualizer/         #     Dossier HTML autónomo + Markdown
 ├── packages/
 │   └── sdk/                    # @specter/sdk — cliente TypeScript tipado
@@ -80,13 +84,21 @@ specter-osint/
 │       ├── styles/             #   colors/theme (tokens) + tailwind.css (@theme) +
 │       │                       #   base/legacy/prose/utilities y orden de capas (index.css)
 │       └── components/         #   VISTAS: Sidebar / CaseView / AgentConsole / DockPrompt
+│           ├── chat/           #   compositor, mensajes e historial de sesión del agente
+│           ├── evidence/       #   GraphCanvas (D3/force-graph), LedgerTable, Timeline
+│           └── ErrorBoundary.tsx #   frontera de error: un panel caído no tumba la app
 ├── scripts/
 │   ├── postinstall.js          #   prepara venv del engine
 │   ├── build-engine.py         #   PyInstaller → dist-engine/specter-engine.exe
 │   └── smoke_http.py           #   test E2E del engine HTTP
-├── data/                       #   specter_osint.db + wmn-data.json (runtime)
-├── reports/                    #   dossiers generados
-└── tests/                      #   pytest (kernel+agente) — 27 ficheros verdes
+├── docs/
+│   ├── adr/                    #   decisiones de arquitectura (ADRs)
+│   ├── agents/                 #   personas y playbooks del agente investigador
+│   └── ui-rules.md             #   reglas de diseño de la consola
+├── data/                       #   RUNTIME (no versionado): specter_osint.db,
+│                              #   ledger.key, cache/ y wmn-data.json
+├── reports/                    #   RUNTIME (no versionado): dossiers generados
+└── tests/                      #   pytest (kernel+agente) — 37 ficheros verdes
 ```
 
 ## Flujos clave
@@ -207,7 +219,8 @@ solo suben, nunca bajan. Las decisiones de arquitectura viven en
   custodia, dossiers, instalador NSIS.
 - **H2** — mapa de grafo interactivo (drag, filtros por tipo, timeline de
   correlaciones), edición manual de entidades, importación de evidencias.
-- **H3** — multi-caso con etiquetas/ETL de exportación (STIX/TAXII), compartimentación
-  por investigación, modo equipo (engine remoto opcional con auth).
+- **H3** — multi-caso con etiquetas/ETL y exportación STIX 2.1 (ya disponible);
+  integración TAXII, compartimentación por investigación y modo equipo (engine remoto
+  opcional con auth).
 - **H4** — plugins (hooks pre/post tool como opencode), marketplace de colectores,
   actualizador automático (electron-updater) y firma de código.

@@ -36,7 +36,7 @@ export function SessionHistory({
   return (
     <div
       data-component="session-history-drawer"
-      className="shrink-0 border-b border-border-weak-base bg-surface-raised-base transition-colors"
+      className="shrink-0 border-b border-border-weak-base bg-transparent transition-colors"
     >
       <button
         type="button"

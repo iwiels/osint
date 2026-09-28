@@ -7,7 +7,7 @@
     /* Ventana estrecha: el raíl cede ancho al expediente antes de plegarse. */
     max-width: 38vw;
     border-right: 1px solid var(--border-weak-base);
-    background-color: var(--surface-raised-base);
+    background-color: transparent;
 
     [data-slot="sidebar-header"] {
       display: flex;

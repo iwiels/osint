@@ -14,7 +14,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
   // System alert / telemetry notice (estilo docket forense sutil, sin wash amarillo agresivo)
   if (message.role === "system") {
-    if (/^permiso para/i.test(message.content)) {
+    if (
+      /^permiso para/i.test(message.content) ||
+      /^analista respondi[oó]/i.test(message.content) ||
+      /^preguntas del agente omitidas/i.test(message.content)
+    ) {
       return null;
     }
     const isError = /error|falló|fallo|excepción|abort/i.test(message.content);

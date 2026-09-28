@@ -98,13 +98,13 @@ def test_subgraph_synthesizes_stub_nodes_from_relations(temp_db, sample_case):
     graph = OSINTGraph(temp_db)
 
     # Solo agregamos una entidad base
-    person = EntityNode.create(EntityType.PERSON, "Josue Pizango", "Josue Pizango")
+    person = EntityNode.create(EntityType.PERSON, "Carlos Mendoza", "Carlos Mendoza")
     temp_db.upsert_entities(sample_case.case_id, [person])
 
     # Agregamos relaciones a nodos que NO fueron insertados en la tabla entities
     r_social = RelationEdge(
         source_id=person.id,
-        target_id="social_profile:https://facebook.com/pizangochang.josuealejandro",
+        target_id="social_profile:https://facebook.com/mendozagarcia.carlosandres",
         relation_type=RelationType.ASSOCIATED_WITH,
     )
     r_custom = RelationEdge(
@@ -132,9 +132,9 @@ def test_subgraph_synthesizes_stub_nodes_from_relations(temp_db, sample_case):
     nodes_by_id = {n.id: n for n in validated.nodes}
 
     # Nodo social sintetizado con tipo SOCIAL_PROFILE y value URL
-    soc_node = nodes_by_id["social_profile:https://facebook.com/pizangochang.josuealejandro"]
+    soc_node = nodes_by_id["social_profile:https://facebook.com/mendozagarcia.carlosandres"]
     assert soc_node.type == EntityType.SOCIAL_PROFILE
-    assert soc_node.value == "https://facebook.com/pizangochang.josuealejandro"
+    assert soc_node.value == "https://facebook.com/mendozagarcia.carlosandres"
 
     # Nodo con prefijo desconocido sintetizado con UNKNOWN
     custom_node = nodes_by_id["custom_unknown:orphan_target"]
@@ -153,12 +153,12 @@ def test_subgraph_synthesizes_stub_nodes_from_relations(temp_db, sample_case):
     assert path is not None
     assert len(path) == 2
     assert path[1]["type"] == EntityType.SOCIAL_PROFILE.value
-    assert path[1]["value"] == "https://facebook.com/pizangochang.josuealejandro"
+    assert path[1]["value"] == "https://facebook.com/mendozagarcia.carlosandres"
 
 
 def test_subgraph_filtering_empty_when_no_match(temp_db, sample_case):
     graph = OSINTGraph(temp_db)
-    person = EntityNode.create(EntityType.PERSON, "Josue Pizango", "Josue Pizango")
+    person = EntityNode.create(EntityType.PERSON, "Carlos Mendoza", "Carlos Mendoza")
     temp_db.upsert_entities(sample_case.case_id, [person])
 
     # Filtrar por un término inexistente DEBE devolver 0 nodos, no el grafo completo
@@ -179,10 +179,10 @@ def test_subgraph_filtering_empty_when_no_match(temp_db, sample_case):
 
 def test_from_node_id_handles_raw_urls_and_social_platforms():
     # URL directa de red social sin prefijo type:
-    node_fb = EntityNode.from_node_id("https://facebook.com/pizangochang.josuealejandro")
+    node_fb = EntityNode.from_node_id("https://facebook.com/mendozagarcia.carlosandres")
     assert node_fb.type == EntityType.SOCIAL_PROFILE
-    assert node_fb.value == "https://facebook.com/pizangochang.josuealejandro"
-    assert node_fb.id == "https://facebook.com/pizangochang.josuealejandro"
+    assert node_fb.value == "https://facebook.com/mendozagarcia.carlosandres"
+    assert node_fb.id == "https://facebook.com/mendozagarcia.carlosandres"
 
     # URL directa HTTP de Twitter
     node_tw = EntityNode.from_node_id("http://twitter.com/osint_analyst")

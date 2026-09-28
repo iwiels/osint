@@ -63,7 +63,7 @@ export function ChatComposer({
         <SessionQuestionDock request={pendingQuestion} client={client} />
       )}
 
-      <div className="border-t border-border-weak-base bg-surface-raised-base p-3">
+      <div className="border-t border-border-weak-base bg-surface-raised-base/40 backdrop-blur-xs p-3">
         <div className="rounded-md border border-border-base bg-surface-inset-base p-2.5 shadow-paper-xs focus-within:border-border-brand-base focus-within:ring-1 focus-within:ring-border-brand-base transition-all">
           <textarea
             ref={inputRef}

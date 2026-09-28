@@ -72,7 +72,7 @@ export function LedgerTable({
             title={
               report?.key_id
                 ? `key_id ${report.key_id} · cadena íntegra y sellada`
-                : "Cadena de custodia sellada e inmutable con HMAC-SHA256"
+                : "Cadena íntegra y firmada con HMAC-SHA256; protege la clave y la base de datos"
             }
           >
             <span className="size-1.5 rounded-full bg-[var(--terracotta)]" />
@@ -110,7 +110,7 @@ export function LedgerTable({
             icon="download"
             onClick={() => exportDossier("html")}
             disabled={busy || exporting !== null}
-            title="Exportar dossier pericial en HTML"
+            title="Exportar dossier de investigación en HTML"
           >
             {exporting === "html" ? "Exportando…" : "HTML"}
           </Button>
@@ -120,7 +120,7 @@ export function LedgerTable({
             icon="download"
             onClick={() => exportDossier("md")}
             disabled={busy || exporting !== null}
-            title="Exportar dossier pericial en Markdown"
+            title="Exportar dossier de investigación en Markdown"
           >
             {exporting === "md" ? "Exportando…" : "MD"}
           </Button>
@@ -131,7 +131,7 @@ export function LedgerTable({
               icon="shield"
               onClick={onSeal}
               disabled={busy || exporting !== null}
-              title="Sella el estado y emite una atestación HMAC verificable por terceros"
+              title="Emite una atestación HMAC; validarla requiere compartir la clave secreta"
             >
               Sellar
             </Button>
@@ -139,7 +139,7 @@ export function LedgerTable({
         </div>
       </div>
 
-      {/* Tabla inmutable de bloques forenses con estilo de legajo archival */}
+      {/* Tabla de bloques auditables con estilo de legajo archival */}
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-collapse text-[12px]">
           <caption className="sr-only">Cadena de custodia sellada: bloques del ledger</caption>

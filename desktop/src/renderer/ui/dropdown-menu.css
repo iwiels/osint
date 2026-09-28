@@ -1,6 +1,6 @@
 @layer components {
   [data-component="dropdown-menu"] {
-    z-index: 70;
+    z-index: 100;
     min-width: 180px;
     padding: 4px;
     border: 1px solid var(--border-weak-base);

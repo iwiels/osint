@@ -13,16 +13,17 @@ Paridades deliberadas con opencode:
 
 from __future__ import annotations
 
+import asyncio
 import html as html_module
 import json
 import logging
 import re
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlsplit, urlunsplit
 
-import httpx
 from specter.collectors.base import BaseCollector
+from specter.httpx_transport import http_get, http_post
 from specter.netguard import check_public_http_url, ssrf_enforce
 from specter.osint_core.models import (
     CollectorResult,
@@ -109,24 +110,24 @@ async def _favicon_mmh3(page_url: str, timeout_s: float = 10.0) -> int | None:
         fav_url = urljoin(f"{parsed.scheme}://{parsed.netloc}", "/favicon.ico")
         if (reason := check_public_http_url(fav_url)) is not None:
             return None
-        async with httpx.AsyncClient(timeout=min(timeout_s, 10.0)) as client:
-            resp = await client.get(
-                fav_url, headers={"User-Agent": BROWSER_UA}, follow_redirects=True
-            )
-            if resp.status_code != 200 or not resp.content:
-                return None
-            if ssrf_enforce():
-                for hop in [*resp.history, resp]:
-                    if check_public_http_url(str(hop.url)) is not None:
-                        return None
-            return _murmur3_x86_32(resp.content)
+        # P0 anti-fingerprinting: transporte curl_cffi (huella TLS de Chrome).
+        resp = await http_get(
+            fav_url,
+            headers={"User-Agent": BROWSER_UA},
+            timeout=min(timeout_s, 10.0),
+        )
+        if resp.status_code != 200 or not resp.content:
+            return None
+        if ssrf_enforce():
+            for hop in [*resp.history, resp]:
+                if check_public_http_url(str(hop.url)) is not None:
+                    return None
+        return _murmur3_x86_32(resp.content)
     except Exception as exc:
         logger.debug("favicon hash fallido: %s", exc)
         return None
 
 
-_TITLE_RE = re.compile(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
-_SNIPPET_RE = re.compile(r'class="result__snippet"[^>]*>(.*?)</a>', re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 _TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
@@ -147,22 +148,82 @@ def _real_url(redir: str) -> str | None:
     return redir if redir.startswith("http") else None
 
 
+class _DDGResultsParser(HTMLParser):
+    """Reads search-result links across DuckDuckGo HTML variants."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: list[dict[str, Any]] = []
+        self._active_link: dict[str, Any] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        values = dict(attrs)
+        classes = set((values.get("class") or "").split())
+        link = {
+            "href": values.get("href") or "",
+            "classes": classes,
+            "text": [],
+        }
+        self.links.append(link)
+        self._active_link = link
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a":
+            self._active_link = None
+
+    def handle_data(self, data: str) -> None:
+        if self._active_link is not None:
+            self._active_link["text"].append(data)
+
+
 def parse_ddg_html(body: str) -> list[dict[str, str]]:
     """Extrae [{title, url, snippet}] del HTML de DuckDuckGo (sin API key)."""
-    titles = _TITLE_RE.findall(body)
-    snippets = _SNIPPET_RE.findall(body)
+    parser = _DDGResultsParser()
+    parser.feed(body)
     results: list[dict[str, str]] = []
-    for i, (redir, title_html) in enumerate(titles):
-        url = _real_url(html_module.unescape(redir))
-        title = _clean_text(title_html)
-        if not url or not title:
+    title_links = [item for item in parser.links if "result__a" in item["classes"]]
+    # Las respuestas HTML varían: además de result__a, algunos endpoints y
+    # respuestas antiguas solo exponen result__url, result__snippet o uddg=.
+    candidates = title_links or [
+        item
+        for item in parser.links
+        if item["href"]
+        and (item["classes"] & {"result__url", "result__snippet"} or "uddg=" in item["href"])
+    ]
+    snippets = [
+        _clean_text(" ".join(item["text"]))
+        for item in parser.links
+        if "result__snippet" in item["classes"]
+    ]
+    for i, item in enumerate(candidates):
+        url = _real_url(html_module.unescape(item["href"]))
+        title = _clean_text(" ".join(item["text"]))
+        if not url:
             continue
-        snippet = _clean_text(snippets[i]) if i < len(snippets) else ""
+        if not title:
+            title = url
+        snippet = snippets[i] if title_links and i < len(snippets) else ""
         results.append({"title": title, "url": url, "snippet": snippet})
     # Deduplicar por URL preservando orden.
     seen: set[str] = set()
     deduped = [r for r in results if not (r["url"] in seen or seen.add(r["url"]))]
     return deduped
+
+
+def ddg_html_status(body: str, result_count: int) -> tuple[str, str | None]:
+    """Clasifica una respuesta DDG vacía como búsqueda vacía o parser roto."""
+    if result_count:
+        return "results", None
+    if re.search(r'class=["\'][^"\']*result', body, re.IGNORECASE):
+        return "parse_error", "DuckDuckGo mostró bloques de resultados que el parser no pudo leer"
+    if re.search(r"no results|sin resultados|no se han encontrado", body, re.IGNORECASE):
+        return "no_results", None
+    return (
+        "empty_or_unrecognized_page",
+        "La respuesta no contiene resultados reconocibles ni mensaje de búsqueda vacía",
+    )
 
 
 class _TextExtractor(HTMLParser):
@@ -204,10 +265,223 @@ def html_to_text(body: bytes) -> tuple[str, str]:
 
 
 class WebSearchCollector(BaseCollector):
-    """Búsqueda web pasiva (DuckDuckGo, sin key): títulos + URLs + snippets."""
+    """Búsqueda web pasiva en varios índices con cobertura por proveedor."""
+
+    ENGINES = ("bing", "ddg", "google")
 
     def __init__(self):
         super().__init__(name="web_search")
+
+    @staticmethod
+    def _canonical_url(url: str) -> str:
+        """Quita fragmentos y parámetros de tracking para unir duplicados."""
+        try:
+            parts = urlsplit(url.strip())
+            if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+                return ""
+            tracking = {"fbclid", "gclid", "dclid", "mc_cid", "mc_eid", "ref_src"}
+            netloc = parts.netloc.lower()
+            if netloc.startswith("www."):
+                netloc = netloc[4:]
+            query = [
+                (key, value)
+                for key, value in parse_qsl(parts.query, keep_blank_values=True)
+                if key.lower() not in tracking and not key.lower().startswith("utm_")
+            ]
+            return urlunsplit(
+                (
+                    parts.scheme.lower(),
+                    netloc,
+                    parts.path or "/",
+                    urlencode(sorted(query)),
+                    "",
+                )
+            )
+        except ValueError:
+            return ""
+
+    async def _search_query(self, query: str, top_k: int) -> dict[str, Any]:
+        from specter.stealth_browser import get_browser
+
+        browser = None
+        try:
+            browser = await get_browser()
+        except Exception as exc:
+            logger.warning("web_search: no se pudo iniciar el navegador: %s", exc)
+
+        async def search_engine(engine: str) -> tuple[str, dict[str, Any]]:
+            if browser is None:
+                return engine, {"status": "error", "reason": "browser_unavailable", "results": []}
+            try:
+                detailed = getattr(browser, "search_detailed", None)
+                if detailed is None:
+                    legacy_results = await browser.search(query, engine=engine, top_k=top_k)
+                    return engine, {
+                        "status": "results" if legacy_results else "empty_or_unrecognized_page",
+                        "results": legacy_results,
+                    }
+                report = await detailed(query, engine=engine, top_k=top_k)
+                return engine, report
+            except Exception as exc:
+                logger.warning("web_search: %s falló: %s", engine, exc)
+                return engine, {"status": "error", "reason": str(exc), "results": []}
+
+        provider_reports = dict(
+            await asyncio.gather(*(search_engine(engine) for engine in self.ENGINES))
+        )
+
+        # DDG HTML is a separate access path used only when its rendered search
+        # page returned no usable hits. Keep its outcome distinct in the report.
+        if provider_reports["ddg"].get("status") != "results":
+            headers = {
+                "User-Agent": BROWSER_UA,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+            }
+            try:
+                response = await http_post(
+                    DDG_HTML_URL,
+                    data={"q": query},
+                    headers=headers,
+                    timeout=SEARCH_TIMEOUT,
+                )
+                if response.status_code >= 400:
+                    provider_reports["ddg_html"] = {
+                        "status": "error",
+                        "reason": f"http_{response.status_code}",
+                        "results": [],
+                    }
+                else:
+                    fallback = parse_ddg_html(response.text)[:top_k]
+                    fallback_status, fallback_reason = ddg_html_status(response.text, len(fallback))
+                    provider_reports["ddg_html"] = {
+                        "status": fallback_status,
+                        "results": fallback,
+                        **({"reason": fallback_reason} if fallback_reason else {}),
+                    }
+            except Exception as exc:
+                provider_reports["ddg_html"] = {
+                    "status": "error",
+                    "reason": f"{type(exc).__name__}: {exc}",
+                    "results": [],
+                }
+
+        # Fair interleaving prevents the first engine from consuming the whole
+        # result budget; duplicate URLs keep every query/provider observation.
+        rows: dict[str, dict[str, Any]] = {}
+        provider_rows: list[tuple[str, list[dict[str, Any]]]] = []
+        for engine, report in provider_reports.items():
+            raw_rows = report.get("results", [])
+            usable: list[dict[str, Any]] = []
+            if isinstance(raw_rows, list):
+                for hit in raw_rows:
+                    if not isinstance(hit, dict):
+                        continue
+                    url = str(hit.get("url") or "").strip()
+                    canonical = self._canonical_url(url)
+                    if not canonical:
+                        continue
+                    usable.append({**hit, "url": url, "canonical_url": canonical})
+            provider_rows.append((engine, usable))
+
+        for rank in range(max((len(items) for _, items in provider_rows), default=0)):
+            for engine, items in provider_rows:
+                if rank >= len(items):
+                    continue
+                hit = items[rank]
+                canonical = hit["canonical_url"]
+                observation = {
+                    "engine": engine,
+                    "query": query,
+                    "rank": rank + 1,
+                }
+                if canonical not in rows:
+                    rows[canonical] = {
+                        "title": str(hit.get("title") or ""),
+                        "url": hit["url"],
+                        "canonical_url": canonical,
+                        "snippet": str(hit.get("snippet") or ""),
+                        "observations": [observation],
+                    }
+                else:
+                    row = rows[canonical]
+                    row["observations"].append(observation)
+                    if not row["title"] and hit.get("title"):
+                        row["title"] = str(hit["title"])
+                    if len(str(hit.get("snippet") or "")) > len(row["snippet"]):
+                        row["snippet"] = str(hit["snippet"])
+
+        merged = list(rows.values())[:top_k]
+        diagnostics = {
+            engine: {
+                "status": str(report.get("status", "error")),
+                "results": len(report.get("results", []))
+                if isinstance(report.get("results"), list)
+                else 0,
+                **({"reason": str(report["reason"])[:240]} if report.get("reason") else {}),
+            }
+            for engine, report in provider_reports.items()
+        }
+        usable_provider = any(
+            value["status"] in {"results", "no_results"} for value in diagnostics.values()
+        )
+        status = "COMPLETED" if merged else ("NO_RESULTS" if usable_provider else "UNAVAILABLE")
+        return {
+            "query": query,
+            "status": status,
+            "results": merged,
+            "providers": diagnostics,
+        }
+
+    @staticmethod
+    def _result_from_report(
+        query: str, results: list[dict[str, Any]], metadata: dict[str, Any]
+    ) -> CollectorResult:
+        root = EntityNode.create(EntityType.ALIAS, query, f"Búsqueda: {query[:40]}")
+        entities = [root]
+        relations: list[RelationEdge] = []
+        for hit in results:
+            url = hit["url"]
+            observations = hit.get("observations", [])
+            engines = sorted({str(item["engine"]) for item in observations})
+            queries = sorted({str(item["query"]) for item in observations})
+            node = EntityNode.create(
+                type=EntityType.SOCIAL_PROFILE
+                if any(s in url.lower() for s in _SOCIAL_HOSTS)
+                else EntityType.DOMAIN,
+                value=url,
+                label=f"Resultado: {hit.get('title', '')[:45]}",
+                attributes={
+                    "url": url,
+                    "canonical_url": hit.get("canonical_url", url),
+                    "title": hit.get("title", ""),
+                    "snippet": str(hit.get("snippet") or "")[:500],
+                    "search_engines": engines,
+                    "queries": queries,
+                    "observations": observations,
+                    "source": "Web Search",
+                },
+                confidence=0.65,
+            )
+            entities.append(node)
+            relations.append(
+                RelationEdge(
+                    source_id=root.id,
+                    target_id=node.id,
+                    relation_type=RelationType.ASSOCIATED_WITH,
+                    confidence=0.65,
+                    attributes={"search_engines": engines, "queries": queries},
+                )
+            )
+        payload = {"query": query, "results": results, **metadata}
+        return CollectorResult(
+            collector_name="web_search",
+            source_target=query,
+            entities=entities,
+            relations=relations,
+            raw_payload=json.dumps(payload, ensure_ascii=False),
+            metadata={"query": query, "results": len(results), **metadata},
+        )
 
     async def collect(
         self, target: str, top_k: int = TOP_K_DEFAULT, **kwargs: Any
@@ -216,79 +490,91 @@ class WebSearchCollector(BaseCollector):
         if not query:
             raise ValueError("Consulta vacía")
         top_k = max(1, min(int(top_k), 20))
+        report = await self._search_query(query, top_k)
+        metadata = {
+            "status": report["status"],
+            "ok": report["status"] != "UNAVAILABLE",
+            "providers": report["providers"],
+        }
+        return self._result_from_report(query, report["results"], metadata)
 
-        results: list[dict[str, str]] = []
+    async def collect_many(
+        self,
+        queries: list[str],
+        top_k: int = 5,
+        concurrency: int = 3,
+    ) -> CollectorResult:
+        """Run a bounded batch of distinct queries through all search engines."""
+        clean: list[str] = []
+        seen: set[str] = set()
+        for query in queries:
+            value = " ".join(str(query).split())
+            if value and value.casefold() not in seen:
+                seen.add(value.casefold())
+                clean.append(value)
+            if len(clean) >= 40:
+                break
+        if not clean:
+            raise ValueError("Se requiere al menos una consulta no vacía")
+        top_k = max(1, min(int(top_k), 20))
+        semaphore = asyncio.Semaphore(max(1, min(int(concurrency), 5)))
 
-        # Navegador sigiloso in-process (Playwright): Chromium real sin API key.
-        # Si falla (o el sitio bloquea), el fallback DuckDuckGo HTML entra igual.
-        try:
-            from specter.stealth_browser import get_browser
+        async def run(query: str) -> dict[str, Any]:
+            async with semaphore:
+                return await self._search_query(query, top_k)
 
-            browser = await get_browser()
-            results = await browser.search(query, engine="bing", top_k=top_k)
-            if not results:
-                # Google CAPTCHA-ea a headless: DDG HTML vía Chromium es el 2º intento.
-                results = await browser.search(query, engine="ddg", top_k=top_k)
-        except Exception as exc:
-            logger.warning("web_search: navegador sigiloso no disponible (%s); fallback DDG", exc)
-            results = []
+        reports = await asyncio.gather(*(run(query) for query in clean))
+        merged: dict[str, dict[str, Any]] = {}
+        for report in reports:
+            for hit in report["results"]:
+                key = hit["canonical_url"]
+                if key not in merged:
+                    merged[key] = hit
+                else:
+                    current = merged[key]
+                    current["observations"].extend(
+                        item for item in hit["observations"] if item not in current["observations"]
+                    )
+                    if not current["title"] and hit["title"]:
+                        current["title"] = hit["title"]
+                    if len(hit["snippet"]) > len(current["snippet"]):
+                        current["snippet"] = hit["snippet"]
 
-        if not results:
-            headers = {
-                "User-Agent": BROWSER_UA,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        query_runs = [
+            {
+                "query": report["query"],
+                "status": report["status"],
+                "results": len(report["results"]),
+                "providers": report["providers"],
             }
-            try:
-                async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT) as client:
-                    resp = await client.post(DDG_HTML_URL, data={"q": query}, headers=headers)
-                    resp.raise_for_status()
-                    results = parse_ddg_html(resp.text)[:top_k]
-            except Exception as exc:
-                return CollectorResult(
-                    collector_name=self.name,
-                    source_target=query,
-                    raw_payload=json.dumps({"query": query, "error": str(exc)}),
-                    metadata={"query": query, "results": 0, "ok": False},
-                )
-
-        entities: list[EntityNode] = []
-        relations: list[RelationEdge] = []
-        root = EntityNode.create(EntityType.ALIAS, query, f"Búsqueda: {query[:40]}")
-        entities.append(root)
-        for hit in results:
-            node = EntityNode.create(
-                type=EntityType.SOCIAL_PROFILE
-                if any(s in hit["url"] for s in _SOCIAL_HOSTS)
-                else EntityType.DOMAIN,
-                value=hit["url"],
-                label=f"Resultado: {hit['title'][:45]}",
-                attributes={
-                    "url": hit["url"],
-                    "title": hit["title"],
-                    "snippet": hit["snippet"][:300],
-                    "source": "Web Search",
-                },
-                confidence=0.8,
-            )
-            entities.append(node)
-            relations.append(
-                RelationEdge(
-                    source_id=root.id,
-                    target_id=node.id,
-                    relation_type=RelationType.ASSOCIATED_WITH,
-                    confidence=0.8,
-                )
-            )
-
-        return CollectorResult(
-            collector_name=self.name,
-            source_target=query,
-            entities=entities,
-            relations=relations,
-            raw_payload=json.dumps({"query": query, "results": results}, ensure_ascii=False),
-            metadata={"query": query, "results": len(results), "ok": True},
+            for report in reports
+        ]
+        all_results = list(merged.values())
+        provider_status: dict[str, dict[str, int]] = {}
+        for report in reports:
+            for engine, detail in report["providers"].items():
+                counts = provider_status.setdefault(engine, {})
+                state = detail["status"]
+                counts[state] = counts.get(state, 0) + 1
+        root_query = clean[0] if len(clean) == 1 else f"Búsqueda profunda: {clean[0][:100]}"
+        any_results = any(report["results"] for report in reports)
+        any_provider_success = any(
+            detail["status"] in {"results", "no_results"}
+            for report in reports
+            for detail in report["providers"].values()
         )
+        batch_metadata = {
+            "status": "COMPLETED"
+            if any_results
+            else "NO_RESULTS"
+            if any_provider_success
+            else "UNAVAILABLE",
+            "ok": any_provider_success,
+            "queries_attempted": len(clean),
+            "query_runs": query_runs,
+            "provider_status": provider_status,
+        }
+        return self._result_from_report(root_query, all_results, batch_metadata)
 
 
 class WebFetchCollector(BaseCollector):
@@ -342,29 +628,30 @@ class WebFetchCollector(BaseCollector):
         if not text:
             try:
                 headers = {"User-Agent": BROWSER_UA, "Accept-Language": "es-ES,es;q=0.9,en;q=0.8"}
-                async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as client:
-                    resp = await client.get(url, headers=headers)
-                    resp.raise_for_status()
-                    # C2: la cadena de redirects también pasa por NetGuard.
-                    if ssrf_enforce():
-                        for hop in [*resp.history, resp]:
-                            if blocked_hop := check_public_http_url(str(hop.url)):
-                                raise ValueError(f"Redirect bloqueado por NetGuard: {blocked_hop}")
-                    ctype = resp.headers.get("content-type", "")
-                    if "image/" in ctype:
-                        raise ValueError(f"La URL es una imagen ({ctype}), sin texto extraíble")
-                    length = resp.headers.get("content-length")
-                    if length and int(length) > FETCH_MAX_BYTES:
-                        raise ValueError(f"Respuesta demasiado grande ({length} bytes, máx 5MB)")
-                    body = resp.content
-                    if len(body) > FETCH_MAX_BYTES:
-                        raise ValueError("Respuesta demasiado grande (máx 5MB)")
-                    title, text = (
-                        html_to_text(body)
-                        if "html" in ctype
-                        or "<html" in body[:2000].decode("utf-8", "ignore").lower()
-                        else ("", body.decode("utf-8", errors="replace"))
-                    )
+                # P0: GET con impersonación TLS (curl_cffi); la huella JA4 ya no
+                # delata a Python ante Cloudflare/DataDome en el fallback HTTP.
+                resp = await http_get(url, headers=headers, timeout=timeout_s)
+                if resp.status_code >= 400:
+                    raise RuntimeError(f"HTTP {resp.status_code}")
+                # C2: la cadena de redirects también pasa por NetGuard.
+                if ssrf_enforce():
+                    for hop in [*resp.history, resp]:
+                        if blocked_hop := check_public_http_url(str(hop.url)):
+                            raise ValueError(f"Redirect bloqueado por NetGuard: {blocked_hop}")
+                body = resp.content
+                ctype = resp.headers.get("content-type", "")
+                if "image/" in ctype:
+                    raise ValueError(f"La URL es una imagen ({ctype}), sin texto extraíble")
+                length = resp.headers.get("content-length")
+                if length and int(length) > FETCH_MAX_BYTES:
+                    raise ValueError(f"Respuesta demasiado grande ({length} bytes, máx 5MB)")
+                if len(body) > FETCH_MAX_BYTES:
+                    raise ValueError(f"Respuesta demasiado grande ({len(body)} bytes, máx 5MB)")
+                title, text = (
+                    html_to_text(body)
+                    if "html" in ctype or "<html" in body[:2000].decode("utf-8", "ignore").lower()
+                    else ("", body.decode("utf-8", errors="replace"))
+                )
             except Exception as exc:
                 return CollectorResult(
                     collector_name=self.name,
