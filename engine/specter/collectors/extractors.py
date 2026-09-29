@@ -1,8 +1,8 @@
 """
-SpecterOSINT - Extractores de inteligencia (emails, teléfonos, nombres, hashes, CC, IBAN).
+WraithOSINT - Extractores de inteligencia (emails, teléfonos, nombres, hashes, CC, IBAN).
 
 Inspirado en SpiderFoot: sfp_email, sfp_phone, sfp_names, sfp_hashes,
-sfp_creditcard, sfp_iban. Adaptado a la arquitectura desktop de SpecterOSINT.
+sfp_creditcard, sfp_iban. Adaptado a la arquitectura desktop de WraithOSINT.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.extractors")
 
 _TIMEOUT = 15.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+extraccion de inteligencia)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+extraccion de inteligencia)"}
 
 # Regex para emails
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")

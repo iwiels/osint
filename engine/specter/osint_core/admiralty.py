@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Helpers de fiabilidad inspirados en la matriz del Almirantazgo.
+WraithOSINT - Helpers de fiabilidad inspirados en la matriz del Almirantazgo.
 
 La matriz 6x6 del Almirantazgo cualifica cada evidencia con DOS ejes:
 

@@ -1,7 +1,7 @@
 [project]
-name = "specter-osint"
-version = "0.2.0"
-description = "SpecterOSINT - Forensic Intelligence Platform (Python engine + Electron desktop)"
+name = "wraith-osint"
+version = "0.3.0"
+description = "WraithOSINT - Plataforma forense de inteligencia OSINT (motor Python + desktop Electron)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -16,6 +16,10 @@ keywords = [
     "chain-of-custody",
 ]
 dependencies = [
+    # Mismo conjunto que engine/requirements.txt (manifest de runtime del
+    # binario PyInstaller). Si añades una dependencia, actualiza los dos:
+    # PyInstaller solo empaqueta lo que hay aquí instalado, y una dependencia
+    # ausente degrada el binario publicado en silencio.
     "mcp[cli]>=1.3.0",
     "networkx>=3.2",
     "pydantic>=2.7.0",

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Web Analytics (Google Analytics, GTM, Facebook Pixel, etc.).
+WraithOSINT - Web Analytics (Google Analytics, GTM, Facebook Pixel, etc.).
 
 Inspirado en SpiderFoot: sfp_webanalytics. Adaptado a la arquitectura desktop.
 """
@@ -24,7 +24,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.web_analytics")
 
 _TIMEOUT = 15.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+web analytics)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+web analytics)"}
 
 # Patrones de analytics
 _GA_UA_RE = re.compile(r"\bUA-\d{4,10}-\d{1,4}\b")

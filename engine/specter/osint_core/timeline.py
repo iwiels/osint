@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Forensic Timeline
+WraithOSINT - Forensic Timeline
 Reconstrucción temporal de un caso: cuándo entró cada artefacto al grafo,
 cuándo se recolectó cada evidencia y qué acciones firmó el analista.
 

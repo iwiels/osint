@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Dossier Exporter & Visualizer Generator
+WraithOSINT - Dossier Exporter & Visualizer Generator
 Generación de reportes forenses autónomos en HTML (Vis.js) y dossiers en formato Markdown.
 """
 
@@ -342,7 +342,7 @@ class DossierExporter:
                 f"- **Sello HMAC-SHA256:** `{audit.get('signature_status', 'N/A')}` (Key ID: `{audit.get('key_id', 'N/A')}`)",
                 "",
                 "---",
-                "*Reporte emitido automáticamente por SpecterOSINT Forensics Engine.*",
+                "*Reporte emitido automáticamente por WraithOSINT Forensics Engine.*",
             ]
         )
 
@@ -433,7 +433,7 @@ class DossierExporter:
                 "id": self._stix_id("identity"),
                 "created": now,
                 "modified": now,
-                "name": f"SpecterOSINT:{case.investigator}",
+                "name": f"WraithOSINT:{case.investigator}",
                 "identity_class": "system",
             }
         ]

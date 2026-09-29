@@ -1,3 +1,17 @@
+# Manifest de RUNTIME del motor. Es la lista que consumen:
+#   - scripts/postinstall.js (venv de desarrollo),
+#   - la CI (job `engine`),
+#   - el workflow de release, que compila el binario con PyInstaller.
+#
+# IMPORTANTE: aquí NO hay dependencias opcionales a propósito. PyInstaller
+# empaqueta todo lo que se importa —incluidos los imports diferidos dentro de
+# funciones, como patchright, maigret, holehe, shodan y censys—, así que sacar
+# cualquiera de estas líneas no aligera la app: le quita capacidades al binario
+# publicado de forma silenciosa (sin navegador sigiloso, sin colectores de
+# identidad o de threat intel).
+#
+# Esta lista y `[project].dependencies` de pyproject.toml son el mismo conjunto
+# y deben actualizarse juntas.
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 mcp[cli]>=1.3.0

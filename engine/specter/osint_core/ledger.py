@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Forensic Ledger
+WraithOSINT - Forensic Ledger
 Ledger de auditoría con encadenamiento de hashes SHA-256 y firma HMAC opcional.
 
 Dos capas de integridad:

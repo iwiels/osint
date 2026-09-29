@@ -1,4 +1,4 @@
-"""SpecterOSINT Collectors Module"""
+"""WraithOSINT Collectors Module"""
 
 from specter.collectors.attack_surface import AttackSurfaceCollector
 from specter.collectors.identity import (

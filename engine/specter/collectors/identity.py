@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Identity & Social Footprint Collectors
+WraithOSINT - Identity & Social Footprint Collectors
 Colectores para investigación de nombres de usuario (patrón Sherlock/WhatsMyName) y correos electrónicos.
 """
 

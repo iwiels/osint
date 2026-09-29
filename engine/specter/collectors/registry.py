@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Collector Registry
+WraithOSINT - Collector Registry
 Catálogo de colectores: los built-ins del kernel + plugins de terceros.
 
 Un plugin se declara en el `pyproject.toml` de su paquete:

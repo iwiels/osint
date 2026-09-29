@@ -1,5 +1,5 @@
 """
-SpecterOSINT - GitHub Deep Forensic Investigator
+WraithOSINT - GitHub Deep Forensic Investigator
 Extracción forense avanzada de perfiles de GitHub: repositorios, commits, emails de autores,
 claves públicas SSH/GPG y enlaces a redes/Discord en descripciones de repositorios.
 """

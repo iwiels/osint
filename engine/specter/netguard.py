@@ -1,5 +1,5 @@
 """
-SpecterOSINT - NetGuard: validador SSRF central para salidas a red.
+WraithOSINT - NetGuard: validador SSRF central para salidas a red.
 
 Todo colector que descargue una URL controlada por el analista/LLM debe pasar
 por `check_public_http_url` antes de tocar la red. Bloquea loopback, red

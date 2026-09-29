@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Queries (CQRS)
+WraithOSINT - Queries (CQRS)
 Consultas que leen estado: obtienen casos, entidades, grafos,
 evidencias, timelines y correlaciones sin mutar nada.
 """

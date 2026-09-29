@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Social Media Collectors
+WraithOSINT - Social Media Collectors
 Colectores de plataformas de social media (gratuitos, sin API key).
 
 Cada colector extrae información pública de perfiles en plataformas
@@ -27,7 +27,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.social_media")
 
 _TIMEOUT = 15.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+social-media)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+social-media)"}
 
 
 async def _fetch(client: httpx.AsyncClient, url: str) -> dict[str, Any] | None:

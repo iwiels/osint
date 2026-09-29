@@ -170,7 +170,7 @@ def main() -> int:
     out = Path(args.out)
     if args.check:
         if not out.is_file():
-            print(f"[specter] ✗ falta {out}: ejecuta npm run gen:sdk", file=sys.stderr)
+            print(f"[wraith] ✗ falta {out}: ejecuta npm run gen:sdk", file=sys.stderr)
             return 1
         current = out.read_text(encoding="utf-8")
         if current != rendered:
@@ -181,15 +181,15 @@ def main() -> int:
                 "generated.ts (engine)",
                 lineterm="",
             )
-            print("[specter] ✗ deriva motor<->SDK detectada:", file=sys.stderr)
+            print("[wraith] ✗ deriva motor<->SDK detectada:", file=sys.stderr)
             print("\n".join(list(diff)[:40]), file=sys.stderr)
-            print("[specter] ejecuta npm run gen:sdk y revisa el diff", file=sys.stderr)
+            print("[wraith] ejecuta npm run gen:sdk y revisa el diff", file=sys.stderr)
             return 1
-        print("[specter] contrato motor<->SDK sin deriva")
+        print("[wraith] contrato motor<->SDK sin deriva")
         return 0
 
     out.write_text(rendered, encoding="utf-8")
-    print(f"[specter] OK -> {out}")
+    print(f"[wraith] OK -> {out}")
     return 0
 
 

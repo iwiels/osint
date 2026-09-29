@@ -1,4 +1,4 @@
-"""SpecterOSINT Visualizer Module"""
+"""WraithOSINT Visualizer Module"""
 
 from specter.visualizer.exporter import (
     DossierExporter,

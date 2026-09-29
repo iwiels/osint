@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Dark Web Collectors
+WraithOSINT - Dark Web Collectors
 Búsquedas en la dark web para menciones de objetivos.
 
 - Ahmia: buscador de servicios ocultos (sin key, clearnet)
@@ -32,7 +32,7 @@ logger = logging.getLogger("specter.collectors.darkweb")
 
 _TIMEOUT = 20.0
 # ASCII estricto: httpx codifica los headers en ASCII.
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+forense, key en boveda local)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+forense, key en boveda local)"}
 
 
 class AhmiaCollector(BaseCollector):

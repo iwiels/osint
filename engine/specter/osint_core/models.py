@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Core Models
+WraithOSINT - Core Models
 Definición de entidades, relaciones y esquemas de evidencia para investigación forense.
 """
 

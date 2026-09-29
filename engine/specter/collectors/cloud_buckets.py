@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Cloud Bucket Enumeration Collectors
+WraithOSINT - Cloud Bucket Enumeration Collectors
 Colectores para descubrir buckets de almacenamiento cloud asociados a un dominio.
 
 Fuentes gratuitas sin API key:
@@ -29,7 +29,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.cloud_buckets")
 
 _TIMEOUT = 12.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+cloud-bucket-enumeration)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+cloud-bucket-enumeration)"}
 
 
 def _collector_key(vault_name: str) -> str | None:

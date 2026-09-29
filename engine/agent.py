@@ -416,7 +416,7 @@ def _case_brief(case_id: str) -> str | None:
 
 SYSTEM_PROMPT = """Eres Specter, un agente de inteligencia OSINT y análisis forense digital.
 
-Operas dentro de SpecterOSINT, una plataforma de investigación con un ledger
+Operas dentro de WraithOSINT, una plataforma de investigación con un ledger
 encadenado por SHA-256 y firma HMAC local opcional: ayuda a detectar alteraciones,
 pero no es almacenamiento inmutable ni una firma pública. Las entidades
 descubiertas se insertan en un grafo por caso.

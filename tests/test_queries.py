@@ -1,5 +1,5 @@
 """
-Tests para las queries CQRS de SpecterOSINT.
+Tests para las queries CQRS de WraithOSINT.
 """
 
 from __future__ import annotations

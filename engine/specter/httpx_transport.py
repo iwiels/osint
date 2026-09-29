@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Transporte HTTP con impersonación TLS (P0 anti-fingerprinting).
+WraithOSINT - Transporte HTTP con impersonación TLS (P0 anti-fingerprinting).
 
 Problema: httpx sobre OpenSSL produce un ClientHello (huella JA4/JA3) de
 Python, delatado en milisegundos por Cloudflare/DataDome/Akamai aunque las

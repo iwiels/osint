@@ -20,12 +20,21 @@ extraResources:
       - "wraith-engine.exe"
 
 # ------------------------------------------------------------------
+# Arquitecturas: NO se fijan aquí a propósito.
+#
+# El motor viaja dentro de la app y PyInstaller no cross-compila, así que la
+# arquitectura del instalador TIENE que ser la del binario que hay en
+# dist-engine/. Al dejar que electron-builder use la arquitectura del host
+# (o la que pase la CI con --x64 / --arm64), el paquete y su motor siempre
+# coinciden. Fijarlas aquí producía un .dmg x64 con un motor arm64 dentro.
+# ------------------------------------------------------------------
+
+# ------------------------------------------------------------------
 # Windows: instalador NSIS por-usuario (no requiere admin)
 # ------------------------------------------------------------------
 win:
   target:
-    - target: nsis
-      arch: [x64]
+    - nsis
   artifactName: ${productName}-${version}-win-${arch}-setup.exe
 
 nsis:
@@ -43,10 +52,8 @@ nsis:
 # ------------------------------------------------------------------
 mac:
   target:
-    - target: dmg
-      arch: [x64, arm64]
-    - target: zip
-      arch: [x64, arm64]
+    - dmg
+    - zip
   category: public.app-category.utilities
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   # hardenedRuntime y entitlements se activan al añadir firma real.
@@ -57,10 +64,8 @@ mac:
 # ------------------------------------------------------------------
 linux:
   target:
-    - target: AppImage
-      arch: [x64]
-    - target: deb
-      arch: [x64]
+    - AppImage
+    - deb
   category: Utility
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
 

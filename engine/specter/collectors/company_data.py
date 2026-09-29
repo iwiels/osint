@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Company Data Collectors
+WraithOSINT - Company Data Collectors
 Colectores para enriquecer información sobre empresas y organizaciones.
 
 Fuentes:
@@ -29,7 +29,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.company_data")
 
 _TIMEOUT = 12.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+company-data)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+company-data)"}
 
 
 def _collector_key(vault_name: str) -> str | None:

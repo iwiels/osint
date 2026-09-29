@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "specter-osint": {
+    "wraith-osint": {
       "command": "uv",
       "args": [
         "--directory",
@@ -10,7 +10,7 @@
         "-m",
         "specter.server"
       ],
-      "description": "Servidor MCP de Ciberinteligencia OSINT y Grafos Forenses (SpecterOSINT)",
+      "description": "Servidor MCP de Ciberinteligencia OSINT y Grafos Forenses (WraithOSINT)",
       "env": {
         "PYTHONPATH": "<ABSOLUTE_PATH_TO_THIS_REPO>/engine"
       }

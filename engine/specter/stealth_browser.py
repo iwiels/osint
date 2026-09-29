@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Motor de navegación sigiloso profesional (patchright + Chromium).
+WraithOSINT - Motor de navegación sigiloso profesional (patchright + Chromium).
 
 Sustituye al motor de navegación embebido en Electron: aquel vivía en el proceso
 main de la app y cualquier corrupción en el subsistema de navegador (0xC0000005)

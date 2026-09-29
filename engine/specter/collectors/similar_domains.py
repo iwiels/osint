@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Similar Domain Finders
+WraithOSINT - Similar Domain Finders
 Detecta dominios similares (typosquatting) y variantes en otros TLDs.
 
 - SimilarDomainFinderCollector: genera variaciones del dominio base

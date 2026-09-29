@@ -1,5 +1,5 @@
 """
-SpecterOSINT - DNS Brute Force Collector
+WraithOSINT - DNS Brute Force Collector
 Fuerza bruta de subdominios comunes contra un dominio base.
 """
 

@@ -1,5 +1,5 @@
 """
-Tests para el Permission Gate de SpecterOSINT.
+Tests para el Permission Gate de WraithOSINT.
 
 Cubre:
 - Motor de permisos con wildcards

@@ -1,5 +1,5 @@
 """
-Tests para los buses CQRS de SpecterOSINT.
+Tests para los buses CQRS de WraithOSINT.
 """
 
 from __future__ import annotations

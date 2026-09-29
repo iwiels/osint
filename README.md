@@ -1,42 +1,54 @@
-# SpecterOSINT
+# WraithOSINT
 
 > Plataforma forense de inteligencia OSINT de escritorio.
-> Motor Python headless + consola Electron instalable (.exe), con cadena de custodia
+> Motor Python headless + consola Electron instalable, con cadena de custodia
 > criptográfica, grafo de conocimiento y agente investigador IA multi-provider.
 
-[![tests](https://img.shields.io/badge/tests-265%2B-brightgreen)]() [![license](https://img.shields.io/badge/license-MIT-blue)]()
+[![CI](https://github.com/iwiels/osint/actions/workflows/ci.yml/badge.svg)](https://github.com/iwiels/osint/actions/workflows/ci.yml)
+[![Release](https://github.com/iwiels/osint/actions/workflows/release.yml/badge.svg)](https://github.com/iwiels/osint/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-584-brightgreen.svg)](#calidad)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#instaladores)
+
+> [!WARNING]
+> **Uso responsable.** WraithOSINT recopila información de fuentes abiertas y
+> tiene capacidades de doble uso (impersonación TLS, navegador sigiloso,
+> enumeración de cuentas opt-in). Úsalo solo con base legal y finalidad
+> legítima: periodismo, respuesta a incidentes, threat intel, derechos humanos
+> o due diligence. **No** está destinado a stalking, doxing ni vigilancia no
+> consentida. Lee [LEGAL.md](LEGAL.md) antes de operarlo.
 
 ## Qué es
 
-SpecterOSINT dejó de ser una capa que depende de OpenCode: ahora es una plataforma
-autónoma con su propio motor y su propia interfaz desktop, al estilo Claude Desktop,
-Antigravity u otras apps Electron profesionales.
+WraithOSINT es una plataforma autónoma con su propio motor y su propia interfaz
+desktop, al estilo de otras apps Electron profesionales.
 
-- **Motor forense** (Python, headless): 40 herramientas de recolección y análisis —
-  DNS/TLS, Certificate Transparency, RDAP, perfiles en +700 sitios (WhatsMyName),
-  forensia de GitHub, caza de documentos, metadatos de archivos y grafo de conocimiento.
-  Cada caso tiene un ledger encadenado SHA-256 con firma HMAC local opcional. La captura
-  WARC 1.1 se puede reproducir en ReplayWeb.page; su manifiesto identifica cuerpos
-  ausentes o truncados. El formato WARC no certifica por sí solo la custodia. El motor
-  también incluye transporte curl_cffi con suplantación de la huella TLS de Chrome,
-  scoring explicable de enlaces Fellegi-Sunter (aún sin calibración empírica),
-  helpers inspirados en Almirantazgo y ventanas temporales solares calculadas
-  a partir de sombras (UTC).
-- **Consola desktop** (Electron + React): gestión de casos, visualización del grafo,
-  auditoría de cadena de custodia y **consola de agente IA** que orquesta las
-  herramientas forenses con approval humana (diálogo de permisos del agente +
+- **Motor forense** (Python, headless): 47 herramientas MCP de recolección y
+  análisis — DNS/TLS, Certificate Transparency, RDAP, perfiles en +700 sitios
+  (WhatsMyName), forensia de GitHub, caza de documentos, metadatos de archivos y
+  grafo de conocimiento. Cada caso tiene un ledger encadenado SHA-256 con firma
+  HMAC local opcional. La captura WARC 1.1 se puede reproducir en
+  ReplayWeb.page; su manifiesto identifica cuerpos ausentes o truncados. El
+  formato WARC no certifica por sí solo la custodia. El motor también incluye
+  transporte curl_cffi con suplantación de la huella TLS de Chrome, scoring
+  explicable de enlaces Fellegi-Sunter (aún sin calibración empírica), helpers
+  inspirados en Almirantazgo y ventanas temporales solares calculadas a partir
+  de sombras (UTC).
+- **Consola desktop** (Electron + React): gestión de casos, visualización del
+  grafo, auditoría de cadena de custodia y **consola de agente IA** que orquesta
+  las herramientas forenses con approval humana (diálogo de permisos del agente +
   permission gate fail-closed en las llamadas directas a la API).
 - **Multi-provider**: Anthropic, OpenAI, **OpenCode Zen (modelos free con
   reintento automático ante rate limit)**, Ollama (local) o cualquier endpoint
   OpenAI-compatible.
-- **Compatibilidad MCP**: las mismas herramientas siguen consumibles desde OpenCode
-  u otro cliente MCP por stdio.
+- **Compatibilidad MCP**: las mismas herramientas siguen consumibles desde otro
+  cliente MCP por stdio.
 
 ## Arquitectura en 30 segundos
 
 ```
 ┌─────────────────────────────────────────────┐
-│         SpecterOSINT Desktop (Win/mac/Linux) │
+│           WraithOSINT Desktop (Win/mac/Linux) │
 │                                             │
 │  Electron UI  ◀──HTTP/SSE──▶  Engine :8787  │
 │  (React)        REST + SSE    (Python       │
@@ -46,9 +58,34 @@ Antigravity u otras apps Electron profesionales.
 
 Detalle completo en [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Instaladores
+
+Cada release publica instaladores nativos para las tres plataformas. El motor
+viaja dentro del paquete (PyInstaller onefile): **no hace falta tener Python
+instalado**.
+
+| Plataforma | Artefacto | Notas |
+|---|---|---|
+| **Windows** | `WraithOSINT-<ver>-win-x64-setup.exe` | NSIS por-usuario, no pide admin, crea acceso directo |
+| **macOS** | `WraithOSINT-<ver>-mac-<arch>.dmg` / `.zip` | x64 y arm64. Sin firmar ni notarizar todavía |
+| **Linux** | `WraithOSINT-<ver>-linux-x64.AppImage` / `.deb` | AppImage portable y paquete Debian |
+
+Descárgalos desde la página de [Releases](../../releases). La CI de release los
+compila en runners nativos (PyInstaller no cross-compila).
+
+> **macOS**: los instaladores no están firmados ni notarizados todavía. Al abrir
+> la app por primera vez hay que permitirla en Ajustes → Privacidad y seguridad.
+> Para distribución sin fricción hace falta un certificado Developer ID y
+> notarización (ver [roadmap](ARCHITECTURE.md#roadmap)).
+
+Los datos del usuario (casos, dossiers, clave del ledger) viven en el directorio
+de datos de la app (`%APPDATA%` en Windows, `~/Library/Application Support` en
+macOS, `~/.config` en Linux), fuera del bundle, y sobreviven a las
+actualizaciones.
+
 ## Inicio rápido (desarrollo)
 
-Requisitos: Node 20+, Python 3.11+ (o [uv](https://docs.astral.sh/uv/)).
+Requisitos: Node 20+ y Python 3.11+ (o [uv](https://docs.astral.sh/uv/)).
 Funciona en Windows, macOS y Linux.
 
 ```bash
@@ -66,34 +103,20 @@ npm run dev
 
 ## Empaquetar instaladores
 
-El motor se compila con PyInstaller (onefile) y el instalador con
-electron-builder. **PyInstaller no cross-compila**: cada plataforma produce su
-propio binario, así que empaqueta en la plataforma destino (o deja que la CI de
-release lo haga por ti en runners nativos).
-
 ```bash
 # 1. Binario del engine (PyInstaller onefile)
-#    Windows: dist-engine/specter-engine.exe
-#    macOS / Linux: dist-engine/specter-engine
+#    Windows: dist-engine/wraith-engine.exe
+#    macOS / Linux: dist-engine/wraith-engine
 npm run engine:build
 
 # 2. Instalador de la plataforma en la que estás
-npm run dist:win     # → desktop/release/SpecterOSINT-<ver>-win-x64-setup.exe (NSIS)
-npm run dist:mac     # → desktop/release/SpecterOSINT-<ver>-mac-<arch>.dmg / .zip
-npm run dist:linux   # → desktop/release/SpecterOSINT-<ver>-linux-x64.AppImage / .deb
+npm run dist:win     # → desktop/release/WraithOSINT-<ver>-win-x64-setup.exe (NSIS)
+npm run dist:mac     # → desktop/release/WraithOSINT-<ver>-mac-<arch>.dmg / .zip
+npm run dist:linux   # → desktop/release/WraithOSINT-<ver>-linux-x64.AppImage / .deb
 ```
 
-El instalador de Windows es por-usuario (no pide admin) y crea acceso directo.
-En las tres plataformas el motor viaja como recurso: **no requiere Python
-instalado en la máquina destino**. Los datos del usuario (casos, dossiers,
-clave del ledger) viven en el directorio de datos de la app
-(`%APPDATA%` en Windows, `~/Library/Application Support` en macOS,
-`~/.config` en Linux), fuera del bundle, y sobreviven a las actualizaciones.
-
-> **macOS**: los instaladores no están firmados ni notarizados todavía. Al
-> abrir la app por primera vez hay que permitirla en Ajustes → Privacidad y
-> seguridad. Para distribución sin fricción hace falta un certificado
-> Developer ID y notarización.
+Empaqueta en la plataforma destino, o deja que la CI de release lo haga por ti
+en runners nativos creando un tag `vX.Y.Z`.
 
 ## Engine standalone (sin Electron)
 
@@ -127,15 +150,33 @@ curl -X POST http://127.0.0.1:8787/agent/run \
 Las herramientas sensibles disparan `permission.request` por SSE; el analista
 responde con `POST /agent/permissions/respond {request_id, decision}`.
 
+## Convención de nombres
+
+El producto se llama **WraithOSINT**, pero el motor conserva `specter` como
+nombre interno del kernel forense. La regla es:
+
+| Ámbito | Identificador | Ejemplo |
+|---|---|---|
+| Producto, UI, instaladores, docs | `Wraith*` | `WraithOSINT`, `@wraith/sdk`, `WraithClient` |
+| Binario del motor | `wraith-engine` | `dist-engine/wraith-engine.exe` |
+| Paquete Python del kernel | `specter` (interno) | `from specter.osint_core import ledger` |
+| Variables de entorno | `SPECTER_*` | `SPECTER_ENGINE_TOKEN`, `SPECTER_DATA_DIR` |
+
+Las variables de entorno y el paquete Python mantienen el nombre interno para no
+romper scripts, tests y despliegues existentes. Están documentadas en
+[.env.example](.env.example).
+
 ## Estructura del repo
 
 | Ruta | Contenido |
 |---|---|
 | `engine/` | Motor Python: FastAPI (`http_server.py`), agente (`agent.py`), registro (`registry.py`) y kernel forense (`specter/`) |
-| `packages/sdk` | `@specter/sdk`, cliente TypeScript tipado (HTTP + SSE) |
+| `packages/sdk` | `@wraith/sdk`, cliente TypeScript tipado (HTTP + SSE) |
 | `desktop/` | App Electron (main / preload / renderer React) |
-| `scripts/` | postinstall, build del engine (PyInstaller), smoke test |
-| `tests/` | Suite pytest (kernel + agente + contrato HTTP, 37 ficheros) |
+| `scripts/` | postinstall, build del engine (PyInstaller), smoke test, gate de contraste |
+| `tests/` | Suite pytest (kernel + agente + contrato HTTP, 70 ficheros) |
+| `docs/` | ADRs, personas del agente y reglas de UI |
+| `skills/` | Playbooks investigativos que el agente puede cargar |
 
 ## Scripts
 
@@ -152,28 +193,58 @@ responde con `POST /agent/permissions/respond {request_id, decision}`.
 | `npm run engine:build` | Empaqueta el engine (PyInstaller) |
 | `npm run smoke:engine` | Smoke test E2E del engine HTTP |
 | `npm run verify` | Todo lo anterior en cadena (puerta de release) |
-| `pytest` | Tests del kernel forense |
-| `npm run dist:win` | Instalador Windows (.exe NSIS por-usuario) |
-| `npm run dist:mac` | Instalador macOS (.dmg + .zip, x64/arm64) |
-| `npm run dist:linux` | Instalador Linux (AppImage + .deb) |
+| `npm run dist:win` / `dist:mac` / `dist:linux` | Instaladores por plataforma |
 | `python -m engine.http_server` | Motor headless standalone |
+
+## Calidad
+
+`npm run verify` reproduce localmente lo que la CI hace cumplir. La estrategia de
+cobertura es **ratchet** ([ADR-004](docs/adr/adr-004-quality-ratchet.md)): los
+umbrales solo suben.
+
+| Gate | Herramienta | Umbral |
+|---|---|---|
+| Lint + formato Python | Ruff | sin deuda |
+| Tests del engine | pytest (584 tests) | cobertura ≥ 80% |
+| Contrato motor↔SDK | `gen_sdk_types.py --check` | sin deriva de `/openapi.json` |
+| Contraste | `a11y-contrast.mjs` | WCAG 2.2 AA |
+| Tipos TypeScript | `tsc --noEmit` | estricto |
+| Tests del SDK | vitest | cobertura ~99% |
+
+Las decisiones de arquitectura viven en [docs/adr/](docs/adr/README.md) y las
+convenciones para contribuir en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Estado y roadmap
 
 **H1 (actual)**: plataforma desktop operativa — engine HTTP con SSE, agente
 multi-provider con diálogo de permisos, permission gate en la API directa,
-grafo, cadena de custodia y dossiers. El borrado de casos por vía directa
-está denegado por defecto (regla `delete/case:*`); se habilita por caso con
+grafo, cadena de custodia y dossiers. El borrado de casos por vía directa está
+denegado por defecto (regla `delete/case:*`); se habilita por caso con
 `add_permission_rule` (`action=delete`, `resource=case:<id>`, `effect=allow`).
 
 **Preservación y análisis implementados**: hash WARC registrado en el ledger,
-transporte TLS impersonado en los colectores que usan `httpx_transport`, resolución
-Fellegi-Sunter explicable, puntuación Almirantazgo y cronolocalización solar. Consulta
-los límites de integridad y uso en [LEGAL.md](LEGAL.md).
+transporte TLS impersonado en los colectores que usan `httpx_transport`,
+resolución Fellegi-Sunter explicable, puntuación Almirantazgo y
+cronolocalización solar. Consulta los límites de integridad y uso en
+[LEGAL.md](LEGAL.md).
 
 Pendientes en [ARCHITECTURE.md](ARCHITECTURE.md#roadmap): grafo interactivo
-(drag/filtros/timeline), integración TAXII, modo equipo, plugins y firma de código.
+(drag/filtros/timeline), integración TAXII, modo equipo, plugins y firma de
+código.
+
+## Créditos y terceros
+
+- Dataset de [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) (MIT),
+  redistribuido en `data/wmn-data.json`.
+- Inspirado en el patrón cliente/servidor de [opencode](https://github.com/sst/opencode).
+- Se apoya en [curl_cffi](https://github.com/lexiforest/curl_cffi),
+  [patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright),
+  [warcio](https://github.com/webrecorder/warcio),
+  [NetworkX](https://networkx.org/), [FastAPI](https://fastapi.tiangolo.com/) y
+  [Electron](https://www.electronjs.org/).
 
 ## Licencia
 
-MIT
+MIT — ver [LICENSE](LICENSE). La licencia cubre el código; el uso que hagas con
+él es tuyo. [LEGAL.md](LEGAL.md) es parte del diseño, no un anexo: si
+redistribuyes el proyecto, mantenlo.

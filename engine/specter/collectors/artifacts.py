@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Forensic Artifacts & Metadata Collector
+WraithOSINT - Forensic Artifacts & Metadata Collector
 Extracción forense de hashes (MD5, SHA1, SHA256), metadatos EXIF/GPS de imágenes y metadatos de documentos PDF.
 """
 

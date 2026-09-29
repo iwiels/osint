@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Passive DNS Collectors
+WraithOSINT - Passive DNS Collectors
 Fuentes de resolución DNS histórica para pivoteo forense.
 
 - DNSGrep (Rapid7 Sonar Project): dominio -> IPs históricas (sin key)
@@ -32,7 +32,7 @@ logger = logging.getLogger("specter.collectors.passive_dns")
 
 _TIMEOUT = 15.0
 # ASCII estricto: httpx codifica los headers en ASCII.
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+forense, key en boveda local)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+forense, key en boveda local)"}
 
 
 def _collector_key(vault_name: str) -> str | None:

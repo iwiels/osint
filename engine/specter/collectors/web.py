@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Web Search & Fetch (sin API key, estilo opencode)
+WraithOSINT - Web Search & Fetch (sin API key, estilo opencode)
 
 Inspirado en `websearch`/`webfetch` de opencode (sst/opencode), pero sin
 proveedor externo de pago (ellos usan Exa/Parallel vía MCP con API key):

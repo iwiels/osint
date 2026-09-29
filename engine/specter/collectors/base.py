@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Base Collector
+WraithOSINT - Base Collector
 Interfaz abstracta para todos los módulos de recolección de inteligencia.
 """
 

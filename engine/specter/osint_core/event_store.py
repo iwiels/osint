@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Event Store
+WraithOSINT - Event Store
 Almacén de eventos inmutables con persistencia SQLite y replay de estado.
 
 Inspirado en el Event Sourcing de OpenCode (packages/core/src/event/), adaptado

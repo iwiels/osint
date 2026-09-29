@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Forensia documental profunda (P1: FOCA/peepdf/ELA/mat2-lite).
+WraithOSINT - Forensia documental profunda (P1: FOCA/peepdf/ELA/mat2-lite).
 
 Sin dependencias nuevas (Pillow + pypdf ya están):
 
@@ -40,7 +40,7 @@ logger = logging.getLogger("specter.collectors.docforensics")
 
 _DDG_URL = "https://html.duckduckgo.com/html/"
 _TIMEOUT = 12.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+forense documental)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+forense documental)"}
 _MAX_DOCS = 8
 _MAX_BYTES = 25 * 1024 * 1024
 

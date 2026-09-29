@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Capa OSINT sobre el navegador sigiloso.
+WraithOSINT - Capa OSINT sobre el navegador sigiloso.
 
 Convierte las operaciones del navegador (`stealth_browser`) en herramientas
 forenses de primera clase. Lo que la CLI de DevTools de Google (chrome-devtools

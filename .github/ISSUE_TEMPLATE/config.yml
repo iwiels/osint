@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Reportar una vulnerabilidad
+    url: https://github.com/iwiels/osint/security/advisories/new
+    about: No abras un issue público para problemas de seguridad. Usa el reporte privado.
+  - name: 📖 Leer la documentación
+    url: https://github.com/iwiels/osint/blob/main/ARCHITECTURE.md
+    about: Arquitectura, decisiones de diseño (ADRs) y roadmap.
+  - name: ⚖️ Uso responsable y legal
+    url: https://github.com/iwiels/osint/blob/main/LEGAL.md
+    about: Qué hace la herramienta, qué no hace a propósito y qué responsabilidad tiene el operador.

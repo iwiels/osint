@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Compaction Service
+WraithOSINT - Compaction Service
 Compactación de resultados de colectores para reducir el tamaño del contexto.
 
 Inspirado en la compactación de OpenCode: cuando un resultado es demasiado

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Port Scan Collector
+WraithOSINT - Port Scan Collector
 Escaneo de puertos TCP comunes con banner grabbing.
 """
 

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Passive Search Engine & Document Hunter Collector
+WraithOSINT - Passive Search Engine & Document Hunter Collector
 Búsqueda pasiva de menciones en la web, filtraciones (leaks/pastes) y descubrimiento automático
 de documentos (PDF, DOCX) con extracción forense de metadatos integrada.
 """

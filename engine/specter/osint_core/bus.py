@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Command/Query Buses (CQRS)
+WraithOSINT - Command/Query Buses (CQRS)
 Buses que despachan comandos y queries a sus respectivos handlers.
 """
 

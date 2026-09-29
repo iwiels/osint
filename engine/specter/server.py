@@ -190,7 +190,7 @@ from specter.visualizer.exporter import DossierExporter
 # Inicialización del servidor MCP y servicios core
 # Las rutas se resuelven vía specter.config (env vars → repo root), de modo
 # que la app empaquetada y los tests puedan redirigir el almacenamiento.
-mcp_server = MCPServer(name="specter-osint")
+mcp_server = MCPServer(name="wraith-osint")
 db = Database(specter_config.database_path())
 ledger = ForensicLedger(db)
 graph = OSINTGraph(db)

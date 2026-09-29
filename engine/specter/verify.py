@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Verificador de cadena de custodia (CLI)
+WraithOSINT - Verificador de cadena de custodia (CLI)
 
 Permite a un tercero auditar un caso sin abrir la app:
 

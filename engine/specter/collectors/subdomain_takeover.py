@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Subdomain Takeover Checker.
+WraithOSINT - Subdomain Takeover Checker.
 
 Verifica si los subdominios de un objetivo son vulnerables a takeover:
 un subdominio que resuelve DNS pero cuyo servicio asociado está disponible
@@ -33,7 +33,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.subdomain_takeover")
 
 _TIMEOUT = 10.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+subdomain-takeover)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+subdomain-takeover)"}
 
 
 @dataclass(frozen=True)
