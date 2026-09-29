@@ -77,11 +77,67 @@ def compute_block_hash(
     evidence_hash: str | None,
     prev_hash: str,
 ) -> str:
+    """Hash canónico del bloque: JSON de la tupla de campos, sin límites ambiguos.
+
+    v1 unía los campos con ':' sin escapar y `action` contiene ':' en datos
+    reales ("GENESIS_CASE_INITIALIZED: nombre"), de modo que mover texto de un
+    campo a otro dejaba la cadena byte-idéntica: hash Y HMAC seguían validando
+    con un significado forense distinto. Con JSON el límite de campo es
+    inequívoco (y `ensure_ascii=False` + separadores fijos lo hacen estable).
+    """
+    serialized = json.dumps(
+        [
+            block_index,
+            case_id,
+            timestamp,
+            collector,
+            action,
+            evidence_id or "none",
+            evidence_hash or "none",
+            prev_hash,
+        ],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return compute_sha256(serialized)
+
+
+def compute_block_hash_v1(
+    block_index: int,
+    case_id: str,
+    timestamp: str,
+    collector: str,
+    action: str,
+    evidence_id: str | None,
+    evidence_hash: str | None,
+    prev_hash: str,
+) -> str:
+    """Formato legado (':' sin escapar): sólo para detectar y migrar cadenas v1."""
     serialized = (
         f"{block_index}:{case_id}:{timestamp}:{collector}:{action}:"
         f"{evidence_id or 'none'}:{evidence_hash or 'none'}:{prev_hash}"
     )
     return compute_sha256(serialized)
+
+
+def compute_head_payload(case_id: str, block_index: int, block_hash: str, updated_at: str) -> str:
+    """Payload canónico de la cabeza firmada que ancla la cola de la cadena.
+
+    Sin este ancla, borrar los últimos N bloques deja una cadena autoconsistente
+    y la verificación la daba por buena; la firma de la cabeza no se puede rehacer
+    sin la clave, así que el truncamiento queda visible.
+    """
+    return json.dumps(
+        {
+            "block_hash": block_hash,
+            "block_index": block_index,
+            "case_id": case_id,
+            "updated_at": updated_at,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
 
 
 class ForensicLedger:
@@ -107,6 +163,13 @@ class ForensicLedger:
         if found is not None:
             self._signing_key = found
         return self._signing_key
+
+    def _head_signature(self, case_id: str, block_index: int, block_hash: str, updated_at: str) -> str | None:
+        """HMAC de la cabeza firmada (None en ledgers sin clave)."""
+        return compute_block_signature(
+            compute_head_payload(case_id, block_index, block_hash, updated_at),
+            self.signing_key,
+        )
 
     def initialize_case_genesis(self, case: CaseMetadata) -> LedgerBlock:
         existing = self.db.get_case_ledger(case.case_id)
@@ -137,7 +200,10 @@ class ForensicLedger:
             block_hash=block_hash,
             signature=compute_block_signature(block_hash, self.signing_key),
         )
-        self.db.insert_ledger_block(genesis_block)
+        self.db.insert_ledger_block(
+            genesis_block,
+            head_signature=self._head_signature(case.case_id, 0, block_hash, timestamp),
+        )
         return genesis_block
 
     def record_evidence_action(
@@ -186,7 +252,10 @@ class ForensicLedger:
             block_hash=block_hash,
             signature=compute_block_signature(block_hash, self.signing_key),
         )
-        self.db.insert_ledger_block(block)
+        self.db.insert_ledger_block(
+            block,
+            head_signature=self._head_signature(case_id, block_index, block_hash, timestamp),
+        )
         return block
 
     def verify_case_integrity(self, case_id: str) -> dict[str, Any]:
@@ -218,6 +287,30 @@ class ForensicLedger:
             prev_hash=genesis.prev_hash,
         )
         if genesis.block_hash != expected_genesis_hash:
+            # ¿No coincide pero sí con el formato v1? La cadena es anterior a la
+            # serialización canónica: no está adulterada, está sin migrar.
+            legacy_genesis_hash = compute_block_hash_v1(
+                block_index=0,
+                case_id=genesis.case_id,
+                timestamp=genesis.timestamp,
+                collector=genesis.collector,
+                action=genesis.action,
+                evidence_id=genesis.evidence_id,
+                evidence_hash=genesis.evidence_hash,
+                prev_hash=genesis.prev_hash,
+            )
+            if genesis.block_hash == legacy_genesis_hash:
+                return {
+                    "valid": False,
+                    "error": (
+                        "Cadena en formato de hash legado (v1, límites de campo "
+                        "ambiguos): no es verificable con el formato vigente. "
+                        "Ejecuta el reseal (POST /cases/{case_id}/ledger/reseal)."
+                    ),
+                    "code": "LEGACY_HASH_FORMAT",
+                    "fix": f"POST /cases/{case_id}/ledger/reseal",
+                    "tampered_block_index": 0,
+                }
             return {
                 "valid": False,
                 "error": "Hash del Bloque Génesis ha sido modificado deliberadamente",
@@ -228,6 +321,16 @@ class ForensicLedger:
         for i in range(1, len(blocks)):
             curr = blocks[i]
             prev = blocks[i - 1]
+
+            if curr.block_index != i:
+                return {
+                    "valid": False,
+                    "error": (
+                        f"Índice de bloque no contiguo: se esperaba {i} y llegó "
+                        f"{curr.block_index} (bloques borrados del medio de la cadena)"
+                    ),
+                    "tampered_block_index": curr.block_index,
+                }
 
             if curr.prev_hash != prev.block_hash:
                 return {
@@ -318,6 +421,24 @@ class ForensicLedger:
                 "tampered_block_index": first_invalid,
                 **signatures,
             }
+        if signatures["missing_signature_blocks"]:
+            first_missing = signatures["missing_signature_blocks"][0]
+            return {
+                "valid": False,
+                "error": (
+                    f"{len(signatures['missing_signature_blocks'])} bloques sin firma "
+                    "habiendo clave de custodia: la capa HMAC fue eliminada (o la "
+                    "cadena es anterior a la migración). Ejecuta el reseal "
+                    f"(POST /cases/{case_id}/ledger/reseal) para volver a sellarla."
+                ),
+                "code": "UNSIGNED_BLOCKS",
+                "tampered_block_index": first_missing,
+                **signatures,
+            }
+
+        head_error = self._verify_head(case_id, blocks[-1])
+        if head_error is not None:
+            return head_error
 
         return {
             "valid": True,
@@ -329,16 +450,80 @@ class ForensicLedger:
             **signatures,
         }
 
+    def _verify_head(self, case_id: str, last: LedgerBlock) -> dict[str, Any] | None:
+        """Comprueba la cabeza firmada contra el último bloque (None si todo cuadra).
+
+        Es lo que detecta el truncamiento de cola: borrar bloques finales deja
+        la cadena restante autoconsistente, pero la cabeza firmada sigue
+        apuntando al bloque que ya no está (o su firma deja de cuadrar).
+        """
+        head = self.db.get_ledger_head(case_id)
+        if head is None:
+            return {
+                "valid": False,
+                "error": (
+                    "Sin cabeza firmada para la cadena: la fila de ancla fue "
+                    "eliminada o la cadena es anterior a la migración. Ejecuta el "
+                    f"reseal (POST /cases/{case_id}/ledger/reseal)."
+                ),
+                "code": "MISSING_HEAD",
+                "tampered_block_index": last.block_index,
+            }
+        if head["block_index"] != last.block_index or head["block_hash"] != last.block_hash:
+            return {
+                "valid": False,
+                "error": (
+                    f"Cabeza firmada no coincide con el final de la cadena "
+                    f"(head={head['block_index']}/{head['block_hash'][:12]}…, "
+                    f"último={last.block_index}/{last.block_hash[:12]}…): "
+                    "bloques eliminados de la cola"
+                ),
+                "code": "HEAD_MISMATCH",
+                "tampered_block_index": last.block_index,
+            }
+        key = self.signing_key
+        if key is not None:
+            expected = compute_block_signature(
+                compute_head_payload(
+                    case_id, head["block_index"], head["block_hash"], head["updated_at"]
+                ),
+                key,
+            )
+            if not head["signature"] or expected is None or not hmac.compare_digest(
+                head["signature"], expected
+            ):
+                return {
+                    "valid": False,
+                    "error": (
+                        "Firma HMAC de la cabeza inválida: la cabeza fue reescrita "
+                        "sin la clave de custodia"
+                    ),
+                    "code": "HEAD_SIGNATURE_INVALID",
+                    "tampered_block_index": last.block_index,
+                }
+        return None
+
     def _verify_signatures(self, blocks: list[LedgerBlock]) -> dict[str, Any]:
-        """Estado de sellado de la cadena: cuántos bloques están firmados y válidos."""
+        """Estado de sellado de la cadena: cuántos bloques están firmados y válidos.
+
+        Con clave disponible, un bloque SIN firma es **inválido**, no "unsigned":
+        borrar la columna firma no debe anular la capa HMAC (regresión de la
+        auditoría: con el criterio antiguo, un atacante con SQLite dejaba la
+        cadena en `UNSIGNED`/`PARTIAL` y la verificación seguía dando `valid`).
+        Sólo sin clave se cuenta como no juzgable (`KEY_UNAVAILABLE`).
+        """
         verified = 0
         unsigned = 0
+        missing: list[int] = []
         invalid: list[int] = []
 
         key = self.signing_key
         for block in blocks:
-            if not block.signature or key is None:
+            if key is None:
                 unsigned += 1
+                continue
+            if not block.signature:
+                missing.append(block.block_index)
                 continue
             expected = compute_block_signature(block.block_hash, key)
             if expected is not None and hmac.compare_digest(block.signature, expected):
@@ -348,14 +533,12 @@ class ForensicLedger:
 
         if key is None:
             status = "KEY_UNAVAILABLE"
-        elif invalid:
-            status = "INVALID"  # hay firmas, pero no son las de esta clave
-        elif verified == len(blocks):
+        elif invalid or missing:
+            status = "INVALID"
+        elif blocks and verified == len(blocks):
             status = "SEALED"
-        elif verified == 0:
-            status = "UNSIGNED"
         else:
-            status = "PARTIAL"
+            status = "UNSIGNED"
 
         return {
             "signature_status": status,
@@ -363,7 +546,176 @@ class ForensicLedger:
             "signed_blocks": verified,
             "unsigned_blocks": unsigned,
             "invalid_signature_blocks": invalid,
+            "missing_signature_blocks": missing,
             "key_id": key_fingerprint(key),
+        }
+
+    def _reseal_guard(self, case_id: str, blocks: list[LedgerBlock]) -> dict[str, Any] | None:
+        """Motivo para rechazar el reseal, o None si la migración es segura.
+
+        Comprueba tres cosas antes de reescribir nada:
+        1. Cada bloque validaba en el formato v1 **o** en el vigente (admite
+           cadenas mixtas: bloques v1 + añadidos por el código nuevo).
+        2. Las firmas existentes (si las hay) siguen verificando con la clave
+           actual: una firma que no cuadra significa campos alterados + hash
+           rehecho.
+        3. La cabeza firmada existe si la cadena ya fue migrada y coincide con
+           la cola: detecta truncamientos recientes.
+        Sin clave no hay ground truth criptográfico que comprobar (una cadena
+        nunca firmada es reformateable por cualquiera con SQLite); en ese caso
+        sólo se juzga la estructura.
+        """
+        prev = GENESIS_PREV_HASH
+        for index, block in enumerate(blocks):
+            if block.block_index != index or block.prev_hash != prev:
+                return {
+                    "code": "CHAIN_INVALID_FOR_RESEAL",
+                    "error": (
+                        f"Índices/encadenamiento incoherentes en el bloque "
+                        f"{block.block_index}: la cadena no es candidata a reseal."
+                    ),
+                }
+            known = {
+                compute_block_hash_v1(
+                    block_index=block.block_index,
+                    case_id=block.case_id,
+                    timestamp=block.timestamp,
+                    collector=block.collector,
+                    action=block.action,
+                    evidence_id=block.evidence_id,
+                    evidence_hash=block.evidence_hash,
+                    prev_hash=prev,
+                ),
+                compute_block_hash(
+                    block_index=block.block_index,
+                    case_id=block.case_id,
+                    timestamp=block.timestamp,
+                    collector=block.collector,
+                    action=block.action,
+                    evidence_id=block.evidence_id,
+                    evidence_hash=block.evidence_hash,
+                    prev_hash=prev,
+                ),
+            }
+            if block.block_hash not in known:
+                return {
+                    "code": "CHAIN_INVALID_FOR_RESEAL",
+                    "error": (
+                        f"Los campos del bloque {block.block_index} no producen su "
+                        "hash en ningún formato conocido: posible adulteración. "
+                        "El reseal queda rechazado; audita la cadena antes de continuar."
+                    ),
+                }
+            prev = block.block_hash
+
+        key = self.signing_key
+        if key is None:
+            return None
+
+        for block in blocks:
+            if not block.signature:
+                continue
+            expected = compute_block_signature(block.block_hash, key)
+            if expected is None or not hmac.compare_digest(block.signature, expected):
+                return {
+                    "code": "SIGNATURE_MISMATCH",
+                    "error": (
+                        f"La firma existente del bloque {block.block_index} no "
+                        "verifica con la clave actual: los campos fueron alterados "
+                        "y el hash rehecho. El reseal queda rechazado."
+                    ),
+                }
+
+        head = self.db.get_ledger_head(case_id)
+        if head is None:
+            return None  # cadena v1 sin cabeza: migración pendiente, esperado
+        last = blocks[-1]
+        if head["block_index"] != last.block_index or head["block_hash"] != last.block_hash:
+            return {
+                "code": "HEAD_MISMATCH",
+                "error": (
+                    "La cabeza firmada no coincide con la cola de la cadena "
+                    "(posible truncamiento). El reseal queda rechazado."
+                ),
+            }
+        expected_head = compute_block_signature(
+            compute_head_payload(case_id, head["block_index"], head["block_hash"], head["updated_at"]),
+            key,
+        )
+        if (
+            not head["signature"]
+            or expected_head is None
+            or not hmac.compare_digest(head["signature"], expected_head)
+        ):
+            return {
+                "code": "HEAD_SIGNATURE_INVALID",
+                "error": (
+                    "La firma de la cabeza no verifica: la cabeza fue reescrita "
+                    "sin la clave. El reseal queda rechazado."
+                ),
+            }
+        return None
+
+    def reseal_case_chain(self, case_id: str) -> dict[str, Any]:
+        """Reescribe hashes, encadenamiento, firmas y cabeza con el formato vigente.
+
+        Migración de cadenas v1 (y de cadenas con bloques sin firma): recalcula
+        desde los campos de cada bloque, que son inmutables, así que la
+        operación es idempotente. Sólo con clave se firman los bloques y la
+        cabeza; sin clave re-hashea y la cadena queda `KEY_UNAVAILABLE`.
+
+        El `_reseal_guard` evita usarlo para lavar una manipulación: una cadena
+        que no valida en ningún formato, con firmas que no cuadran o con la
+        cabeza desincronizada se rechaza.
+        """
+        blocks = self.db.get_case_ledger(case_id)
+        if not blocks:
+            return {
+                "resealed": False,
+                "case_id": case_id,
+                "error": f"No hay cadena de custodia para el caso {case_id}",
+            }
+        guard = self._reseal_guard(case_id, blocks)
+        if guard is not None:
+            return {"resealed": False, "case_id": case_id, **guard}
+
+        key = self.signing_key
+        prev = GENESIS_PREV_HASH
+        rows: list[tuple[int, str, str, str | None]] = []
+        for block in blocks:
+            new_hash = compute_block_hash(
+                block_index=block.block_index,
+                case_id=block.case_id,
+                timestamp=block.timestamp,
+                collector=block.collector,
+                action=block.action,
+                evidence_id=block.evidence_id,
+                evidence_hash=block.evidence_hash,
+                prev_hash=prev,
+            )
+            rows.append(
+                (block.block_index, prev, new_hash, compute_block_signature(new_hash, key))
+            )
+            prev = new_hash
+
+        last = blocks[-1]
+        head_hash = rows[-1][2]
+        self.db.reseal_ledger_chain(
+            case_id,
+            rows=rows,
+            head_block_index=last.block_index,
+            head_block_hash=head_hash,
+            head_updated_at=last.timestamp,
+            head_signature=self._head_signature(
+                case_id, last.block_index, head_hash, last.timestamp
+            ),
+        )
+        return {
+            "resealed": True,
+            "case_id": case_id,
+            "total_blocks": len(blocks),
+            "head_block_hash": head_hash,
+            "signed": key is not None,
         }
 
     def attest_case(self, case_id: str) -> dict[str, Any]:
