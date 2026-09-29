@@ -63,7 +63,7 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   - El paquete Python `specter`, las variables de entorno `SPECTER_*` y el
     fichero `specter_osint.db` **conservan** el nombre interno del motor para no
     romper scripts, tests y despliegues. La convención está documentada en el
-    [README](README.md#convención-de-nombres).
+    [README](README.md#naming-convention).
 - **El release ahora compila un instalador por plataforma y arquitectura.** El
   motor viaja dentro de la app y PyInstaller no cross-compila, así que macOS
   necesita dos binarios (Intel x64 y Apple Silicon arm64) y cada .dmg lleva el
@@ -73,9 +73,11 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
 - CI: `npm ci` en lugar de `npm install` (el lock pasa a ser vinculante), Node 22
   (Node 20 está fuera de soporte) y matriz de Python 3.11 / 3.12 para verificar
   el suelo que declara `pyproject.toml`.
-- `README.md` reescrito: badges de CI y release, tabla de instaladores por
-  plataforma, aviso de uso responsable destacado, sección de convención de
-  nombres y atribución de terceros.
+- `README.md` reescrito: logo y banner, capturas de la interfaz con datos
+  ficticios, recorrido por las funciones, diagrama de arquitectura, tabla de
+  descargas con los nombres reales de los instaladores, aviso de uso responsable
+  destacado y el material de desarrollo plegado. Los nombres de instalador con
+  `<version>` ya no pierden ese fragmento, que GitHub tomaba por una etiqueta HTML.
 - Añadido `timeout-minutes` y `permissions: contents: read` a los workflows.
 
 ### Corregido
@@ -112,6 +114,10 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   `pip install`; el tag se empujó antes de fijar `maigret==0.1.7`. Además, el
   paquete `.deb` exige el email del mantenedor y `desktop/package.json` no tenía
   `author` ni `homepage`.
+- **El motor de macOS y Linux llegaba al instalador sin permiso de ejecución.**
+  `upload-artifact` y `download-artifact` no conservan los permisos y la app lanza
+  el binario sin restaurarlos; el release ejecuta `chmod +x` tras descargar el
+  artefacto.
 - **La CI no instalaba `pytest-asyncio`**: todos los tests `async` fallaban y la
   cobertura caía al 42 %. Ahora se instala en CI y en la guía de contribución, y
   `pyproject.toml` lo declara en `required_plugins` para abortar con un mensaje
@@ -125,6 +131,8 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   ledger firmado. Un motor roto ya no llega a un instalador.
 - Icono de la aplicación (`desktop/build/icon.png`) y notas de release propias
   (`.github/release-notes.md`) con descargas, primer arranque y uso responsable.
+- Identidad visual en `docs/assets/`: logo, banner del README y capturas de la
+  interfaz (`screenshots/`), todas con datos ficticios.
 - `LICENSE` (MIT), `.env.example` documentando todas las variables del motor,
   `CHANGELOG.md` y `CODE_OF_CONDUCT.md`.
 - Configuración de Dependabot para npm, pip, uv y GitHub Actions, con agrupación
