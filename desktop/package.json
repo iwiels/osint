@@ -16,7 +16,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "node --test \"src/renderer/*.test.ts\"",
-    "dist": "electron-builder",
+    "dist": "node scripts/dist.mjs",
     "start": "electron-vite preview"
   },
   "dependencies": {

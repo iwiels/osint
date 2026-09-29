@@ -11,7 +11,8 @@ AI investigator.
 | **Windows** (x64) | `WraithOSINT-<version>-win-x64-setup.exe` | Per-user installer, no admin rights needed |
 | **macOS** (Intel) | `WraithOSINT-<version>-mac-x64.dmg` or `.zip` | Not signed or notarized yet |
 | **macOS** (Apple Silicon) | `WraithOSINT-<version>-mac-arm64.dmg` or `.zip` | Not signed or notarized yet |
-| **Linux** (x64) | `WraithOSINT-<version>-linux-x64.AppImage` or `.deb` | Portable AppImage or Debian package |
+| **Linux** (x64) | `WraithOSINT-<version>-linux-x86_64.AppImage` | Portable, runs on most distributions |
+| **Linux** (x64) | `WraithOSINT-<version>-linux-amd64.deb` | Debian and Ubuntu package |
 
 Python is not required: the engine ships inside the app. Your cases, dossiers, and
 ledger key live outside the app bundle, so they survive updates.
@@ -23,7 +24,7 @@ ledger key live outside the app bundle, so they survive updates.
 - **macOS:** the app is not notarized yet. Open it once, then allow it in
   **System Settings → Privacy & Security** (**Open Anyway**).
 - **Linux:** make the AppImage executable with `chmod +x`, or install the package with
-  `sudo apt install ./WraithOSINT-<version>-linux-x64.deb`.
+  `sudo apt install ./WraithOSINT-<version>-linux-amd64.deb`.
 
 ### Responsible use
 

@@ -4,7 +4,7 @@ name: Release
 # Artefactos publicados:
 #   Windows → WraithOSINT-<ver>-win-x64-setup.exe
 #   macOS   → WraithOSINT-<ver>-mac-x64.dmg / .zip  y  ...-mac-arm64.dmg / .zip
-#   Linux   → WraithOSINT-<ver>-linux-x64.AppImage / .deb
+#   Linux   → WraithOSINT-<ver>-linux-x86_64.AppImage  y  ...-linux-amd64.deb
 on:
   push:
     tags: ["v*"]
@@ -132,10 +132,19 @@ jobs:
         run: npm run build
 
       - name: Empaquetar instalador
-        run: npm run dist --workspace desktop -- ${{ matrix.dist }}
+        id: package
+        # bash en las tres plataformas: `tee` guarda la salida y pipefail conserva el código
+        # de error de electron-builder.
+        shell: bash
+        run: npm run dist --workspace desktop -- ${{ matrix.dist }} 2>&1 | tee packaging.log
         env:
           # Electron-builder publica vía GitHub Releases con este token.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mostrar el error del empaquetado
+        # Los logs del run exigen iniciar sesión; una anotación se ve en el resumen.
+        if: failure() && steps.package.outcome == 'failure'
+        run: node scripts/annotate-log.mjs packaging.log "Empaquetado (electron-builder)"
 
       - name: Subir instaladores
         uses: actions/upload-artifact@v4
