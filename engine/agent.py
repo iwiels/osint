@@ -1006,12 +1006,12 @@ async def run_agent(
         async def on_token(delta: str) -> None:
             nonlocal tokens_emitted
             tokens_emitted += 1
-            await emit("agent.token", {"delta": delta})
+            await emit("agent.token", {"delta": delta, "case_id": case_id})
 
         # --- Planificador: un turno previo que fija la estrategia y la publica ---
         if plan_first and cfg.name != "anthropic":
             try:
-                plan = await _emit_plan(client, cfg, model_id, message, emit)
+                plan = await _emit_plan(client, cfg, model_id, message, emit, case_id)
             except Exception:
                 _history_finish(run_id, "error", 0, 0, usage, "falló el planificador")
                 _active_runs.pop(run_id, None)
@@ -1040,7 +1040,10 @@ async def run_agent(
                 # sólo si todavía no se publicó ningún token (si no, el texto ya
                 # mostrado quedaría duplicado).
                 if tokens_emitted == before and exc.response.status_code in STREAM_UNSUPPORTED:
-                    await emit("agent.stream_fallback", {"status": exc.response.status_code})
+                    await emit(
+                        "agent.stream_fallback",
+                        {"status": exc.response.status_code, "case_id": case_id},
+                    )
                     return await _step_openai_compatible(
                         client, cfg, model_id, system, messages, tools_schema
                     )
@@ -1059,7 +1062,10 @@ async def run_agent(
             stopped = "Run detenido por el analista."
             messages.append({"role": "assistant", "content": stopped})
             _history_append(run_id, "assistant", stopped)
-            await emit("agent.message", {"role": "assistant", "content": stopped})
+            await emit(
+                "agent.message",
+                {"role": "assistant", "content": stopped, "case_id": case_id},
+            )
 
         while iterations < max_iterations:
             iterations += 1
@@ -1087,7 +1093,12 @@ async def run_agent(
             if assistant_msg.get("content"):
                 _history_append(run_id, "assistant", str(assistant_msg["content"]))
             await emit(
-                "agent.message", {"role": "assistant", "content": assistant_msg.get("content")}
+                "agent.message",
+                {
+                    "role": "assistant",
+                    "content": assistant_msg.get("content"),
+                    "case_id": case_id,
+                },
             )
 
             if not tool_calls:
@@ -1096,13 +1107,22 @@ async def run_agent(
             if len(tool_calls) > 1:
                 await emit(
                     "agent.tools_parallel",
-                    {"count": len(tool_calls), "tools": [c["name"] for c in tool_calls]},
+                    {
+                        "count": len(tool_calls),
+                        "tools": [c["name"] for c in tool_calls],
+                        "case_id": case_id,
+                    },
                 )
 
             async def run_call(call: dict[str, Any]) -> dict[str, Any]:
                 await emit(
                     "tool.started",
-                    {"call_id": call["id"], "tool": call["name"], "arguments": call["arguments"]},
+                    {
+                        "call_id": call["id"],
+                        "tool": call["name"],
+                        "arguments": call["arguments"],
+                        "case_id": case_id,
+                    },
                 )
                 try:
                     # El caso activo se inyecta si la tool lo necesita y el
@@ -1140,7 +1160,12 @@ async def run_agent(
                     result = json.dumps({"error": str(exc), "tool": call["name"]})
                 await emit(
                     "tool.completed",
-                    {"call_id": call["id"], "tool": call["name"], "result": result[:2000]},
+                    {
+                        "call_id": call["id"],
+                        "tool": call["name"],
+                        "result": result[:2000],
+                        "case_id": case_id,
+                    },
                 )
                 return {"call_id": call["id"], "tool": call["name"], "result": result}
 
@@ -1199,6 +1224,7 @@ async def run_agent(
             "tools_used": len(tool_results),
             "usage": usage,
             "streaming": use_stream,
+            "case_id": case_id,
         },
     )
 
@@ -1309,6 +1335,7 @@ async def _emit_plan(
     model: str,
     message: str,
     emit: EmitFn,
+    case_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Pide un plan al modelo y lo publica por SSE. Nunca falla el run: sin plan se sigue."""
     try:
@@ -1327,14 +1354,19 @@ async def _emit_plan(
         content = response.json()["choices"][0]["message"].get("content") or ""
         plan = parse_plan(content)
     except Exception as exc:
-        await emit("agent.plan", {"steps": [], "source": "planner", "error": str(exc)})
+        await emit(
+            "agent.plan", {"steps": [], "source": "planner", "error": str(exc), "case_id": case_id}
+        )
         return []
 
     if not plan:
-        await emit("agent.plan", {"steps": [], "source": "planner"})
+        await emit("agent.plan", {"steps": [], "source": "planner", "case_id": case_id})
         return []
 
-    await emit("agent.plan", {"steps": plan, "total_steps": len(plan), "source": "planner"})
+    await emit(
+        "agent.plan",
+        {"steps": plan, "total_steps": len(plan), "source": "planner", "case_id": case_id},
+    )
     return plan
 
 

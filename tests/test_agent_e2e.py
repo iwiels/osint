@@ -270,6 +270,11 @@ async def test_agent_e2e_crea_caso_y_registra_cadena_de_custodia(engine, monkeyp
     assert types.count("tool.started") == 3
     assert types.count("tool.completed") == 3
 
+    # --- Trazabilidad de caso: los eventos del run llevan su case_id ---
+    for t in ("tool.started", "tool.completed", "agent.message", "agent.completed"):
+        for payload in _of_type(events, t):
+            assert "case_id" in payload
+
     # --- Planificador: se publica por SSE y se le devuelve al modelo como contexto ---
     plan_events = _of_type(events, "agent.plan")
     assert len(plan_events) == 1
@@ -382,7 +387,11 @@ async def test_agente_ejecuta_en_paralelo_las_tools_del_mismo_turno(engine, monk
         "correlate_cases",
     ]
     assert _of_type(events, "agent.tools_parallel") == [
-        {"count": 3, "tools": ["list_cases", "analyze_network_metrics", "correlate_cases"]}
+        {
+            "count": 3,
+            "tools": ["list_cases", "analyze_network_metrics", "correlate_cases"],
+            "case_id": None,
+        }
     ]
     assert _types(events).count("tool.started") == 3
 
@@ -429,7 +438,7 @@ async def test_agente_cae_a_modo_sin_stream_si_el_provider_lo_rechaza(engine, mo
 
     assert served["count"] == 2
     assert result["final_message"] == "Respondido sin streaming."
-    assert _of_type(events, "agent.stream_fallback") == [{"status": 400}]
+    assert _of_type(events, "agent.stream_fallback") == [{"status": 400, "case_id": None}]
     assert result["usage"] == {"input_tokens": 0, "output_tokens": 0}
 
 

@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { WraithClient, connectEvents } from "@wraith/sdk";
+import { WraithClient, connectEvents, isPayloadForActiveCase } from "@wraith/sdk";
 import { PANEL_BREAKPOINTS, useStore, type PanelState } from "./store";
 import { IconButton, Tag, cn } from "./ui";
 import Sidebar from "./components/Sidebar";
@@ -165,26 +165,36 @@ export default function App() {
                   useStore.getState().setActiveRunId(p.run_id ?? null);
                 },
                 "tool.started": (payload) => {
+                  if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;
                   const p = payload as { call_id?: string; tool: string; arguments?: unknown };
                   useStore.getState().startToolCall(p.call_id ?? "", p.tool, p.arguments);
                 },
                 "tool.completed": (payload) => {
-                  const p = payload as { call_id?: string; tool: string; result?: string };
+                  if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;
+                  const p = payload as {
+                    call_id?: string;
+                    tool: string;
+                    result?: string;
+                    case_id?: string | null;
+                  };
                   useStore.getState().completeToolCall(p.call_id ?? "", p.tool, p.result ?? "");
-                  useStore.getState().bumpCaseData();
+                  if (p.case_id !== null) useStore.getState().bumpCaseData();
                 },
                 // Streaming: el turno se va pintando token a token.
                 "agent.token": (payload) => {
+                  if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;
                   const p = payload as { delta?: string };
                   if (p.delta) useStore.getState().appendToken(p.delta);
                 },
                 // El mensaje completo cierra el stream y sustituye el texto parcial.
                 "agent.message": (payload) => {
+                  if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;
                   const p = payload as { role: string; content: string | null };
                   if (p.content) useStore.getState().finalizeAssistant(p.content);
                   else useStore.getState().closeStream();
                 },
                 "agent.plan": (payload) => {
+                  if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;
                   const p = payload as { steps?: unknown[]; error?: string };
                   const steps = (p.steps ?? []) as never;
                   useStore.getState().setPlan(Array.isArray(p.steps) && p.steps.length ? steps : null);
@@ -199,6 +209,7 @@ export default function App() {
                   // Las herramientas en paralelo se agrupan limpiamente en la consola sin ensuciar el chat
                 },
                 "agent.stream_fallback": (payload) => {
+                  if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;
                   const p = payload as { status?: number };
                   useStore.getState().pushMessage({
                     role: "system",
@@ -207,15 +218,21 @@ export default function App() {
                 },
                 "agent.completed": (payload) => {
                   const p = payload as { usage?: { input_tokens: number; output_tokens: number } };
-                  useStore.getState().closeStream();
-                  useStore.getState().setUsage(p.usage ?? null);
+                  const store = useStore.getState();
+                  if (isPayloadForActiveCase(payload, store.activeCaseId)) {
+                    store.closeStream();
+                    store.setUsage(p.usage ?? null);
+                    store.bumpSessions();
+                    if ((payload as { case_id?: string | null }).case_id !== null) {
+                      store.bumpCaseData();
+                    }
+                  }
                   useStore.getState().clearPermissions();
                   useStore.getState().setPendingQuestion(null);
                   useStore.getState().setActiveRunId(null);
-                  useStore.getState().bumpCaseData();
-                  useStore.getState().bumpSessions();
                 },
                 "agent.rate_limited": (payload) => {
+                  if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;
                   const p = payload as { wait_seconds?: number; attempt?: number };
                   useStore.getState().pushMessage({
                     role: "system",

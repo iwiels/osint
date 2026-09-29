@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { connectEvents, type EventHandlers } from "./sse";
+import { connectEvents, isPayloadForActiveCase, type EventHandlers } from "./sse";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -111,5 +111,18 @@ describe("connectEvents", () => {
     const dispose = connectEvents("http://127.0.0.1:8787/", {}, "tok-1");
     expect(FakeEventSource.instances[0].url).toBe("http://127.0.0.1:8787/events?token=tok-1");
     dispose();
+  });
+});
+
+describe("isPayloadForActiveCase", () => {
+  it("matches case-scoped and global payloads to the selected case", () => {
+    expect(isPayloadForActiveCase({ case_id: "case-a" }, "case-a")).toBe(true);
+    expect(isPayloadForActiveCase({ case_id: "case-a" }, "case-b")).toBe(false);
+    expect(isPayloadForActiveCase({ case_id: null }, null)).toBe(true);
+    expect(isPayloadForActiveCase({ case_id: null }, "case-b")).toBe(false);
+  });
+
+  it("keeps legacy payloads without case scope deliverable", () => {
+    expect(isPayloadForActiveCase({ delta: "legacy" }, "case-a")).toBe(true);
   });
 });
