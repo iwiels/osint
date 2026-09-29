@@ -568,7 +568,13 @@ class Database:
                     updated_at = excluded.updated_at,
                     signature = excluded.signature
                 """,
-                (block.case_id, block.block_index, block.block_hash, block.timestamp, head_signature),
+                (
+                    block.case_id,
+                    block.block_index,
+                    block.block_hash,
+                    block.timestamp,
+                    head_signature,
+                ),
             )
 
     def get_ledger_head(self, case_id: str) -> dict[str, Any] | None:

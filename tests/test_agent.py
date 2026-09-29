@@ -228,9 +228,7 @@ async def test_ask_analyst_devuelve_unanswered_si_el_run_se_detiene() -> None:
 
     agent._active_runs["run-q"] = "case-q"
     task = asyncio.create_task(
-        agent._ask_analyst(
-            {"questions": [{"question": "¿Vigilar el subdominio?"}]}, "case-q", emit
-        )
+        agent._ask_analyst({"questions": [{"question": "¿Vigilar el subdominio?"}]}, "case-q", emit)
     )
     try:
         for _ in range(200):

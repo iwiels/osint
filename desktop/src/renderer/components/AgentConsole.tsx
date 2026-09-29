@@ -134,6 +134,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   const send = async () => {
     const message = input.trim();
     if (!message || agentBusy || !engineOnline) return;
+    const runCaseId = activeCaseId;
 
     setSettingsOpen(false);
     pushMessage({ role: "user", content: message });
@@ -164,19 +165,22 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
         { signal: controller.signal },
       );
 
-      if (result.session_id) {
+      const runCaseIsActive = useStore.getState().activeCaseId === runCaseId;
+      if (result.session_id && runCaseIsActive) {
         setActiveSessionId(result.session_id);
       }
 
-      const last = useStore.getState().chat.at(-1);
-      if (!last || last.role !== "assistant") {
-        pushMessage({ role: "assistant", content: result.final_message || "(sin respuesta)" });
+      if (runCaseIsActive) {
+        const last = useStore.getState().chat.at(-1);
+        if (!last || last.role !== "assistant") {
+          pushMessage({ role: "assistant", content: result.final_message || "(sin respuesta)" });
+        }
+        setUsage(result.usage ?? null);
       }
-      setUsage(result.usage ?? null);
     } catch (err) {
       if (stopRequestedRef.current || controller.signal.aborted) {
         // stop() ya registró la advertencia en el chat
-      } else {
+      } else if (useStore.getState().activeCaseId === runCaseId) {
         pushMessage({
           role: "system",
           content: `Error: ${err instanceof Error ? err.message : String(err)}`,
@@ -188,9 +192,11 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
       // Sin agent.completed (error de transporte), el run_id no debe quedar
       // apuntando a un run que ya no existe.
       useStore.getState().setActiveRunId(null);
-      setHistoryView(null);
-      bumpSessions();
-      bumpCaseData();
+      if (useStore.getState().activeCaseId === runCaseId) {
+        setHistoryView(null);
+        bumpSessions();
+        bumpCaseData();
+      }
     }
   };
 

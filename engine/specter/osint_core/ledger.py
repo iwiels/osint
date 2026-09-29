@@ -164,7 +164,9 @@ class ForensicLedger:
             self._signing_key = found
         return self._signing_key
 
-    def _head_signature(self, case_id: str, block_index: int, block_hash: str, updated_at: str) -> str | None:
+    def _head_signature(
+        self, case_id: str, block_index: int, block_hash: str, updated_at: str
+    ) -> str | None:
         """HMAC de la cabeza firmada (None en ledgers sin clave)."""
         return compute_block_signature(
             compute_head_payload(case_id, block_index, block_hash, updated_at),
@@ -489,8 +491,10 @@ class ForensicLedger:
                 ),
                 key,
             )
-            if not head["signature"] or expected is None or not hmac.compare_digest(
-                head["signature"], expected
+            if (
+                not head["signature"]
+                or expected is None
+                or not hmac.compare_digest(head["signature"], expected)
             ):
                 return {
                     "valid": False,
@@ -639,7 +643,9 @@ class ForensicLedger:
                 ),
             }
         expected_head = compute_block_signature(
-            compute_head_payload(case_id, head["block_index"], head["block_hash"], head["updated_at"]),
+            compute_head_payload(
+                case_id, head["block_index"], head["block_hash"], head["updated_at"]
+            ),
             key,
         )
         if (
@@ -693,9 +699,7 @@ class ForensicLedger:
                 evidence_hash=block.evidence_hash,
                 prev_hash=prev,
             )
-            rows.append(
-                (block.block_index, prev, new_hash, compute_block_signature(new_hash, key))
-            )
+            rows.append((block.block_index, prev, new_hash, compute_block_signature(new_hash, key)))
             prev = new_hash
 
         last = blocks[-1]

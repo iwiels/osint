@@ -38,6 +38,23 @@ export interface PermissionRequestPayload {
   session_id?: string;
 }
 
+/** Payloads ligados a un expediente; `null` representa un run global. */
+export interface CaseScopedPayload {
+  case_id?: string | null;
+}
+
+/** Decide si un evento pertenece al contexto visible, aceptando motores antiguos sin `case_id`. */
+export function isPayloadForActiveCase(
+  payload: unknown,
+  activeCaseId: string | null,
+): boolean {
+  if (typeof payload !== "object" || payload === null || !("case_id" in payload)) {
+    return true;
+  }
+  const caseId = (payload as CaseScopedPayload).case_id;
+  return caseId === activeCaseId;
+}
+
 /** Pregunta del agente al analista (tool ask_analyst, estilo opencode question). */
 export interface QuestionOption {
   label: string;
@@ -63,22 +80,26 @@ export interface ToolEventPayload {
   tool: string;
   arguments?: Record<string, unknown>;
   result?: string;
+  case_id?: string | null;
 }
 
 export interface AgentMessagePayload {
   role: string;
   content: string | null;
+  case_id?: string | null;
 }
 
 export interface RateLimitedPayload {
   attempt: number;
   wait_seconds: number;
   status: number;
+  case_id?: string | null;
 }
 
 /** Fragmento de texto del modelo mientras se genera (streaming). */
 export interface AgentTokenPayload {
   delta: string;
+  case_id?: string | null;
 }
 
 export interface PlanStep {
@@ -92,11 +113,13 @@ export interface AgentPlanPayload {
   total_steps?: number;
   source: "planner" | string;
   error?: string;
+  case_id?: string | null;
 }
 
 export interface ToolsParallelPayload {
   count: number;
   tools: string[];
+  case_id?: string | null;
 }
 
 export interface AgentUsage {
@@ -117,6 +140,7 @@ export interface AgentCompletedPayload {
   tools_used: number;
   usage?: AgentUsage;
   streaming?: boolean;
+  case_id?: string | null;
 }
 
 export type EventHandlers = {

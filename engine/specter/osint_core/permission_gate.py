@@ -144,9 +144,7 @@ class PermissionRequest(BaseModel):
 
 def _is_exact_rule(rule: PermissionRule) -> bool:
     """True si la regla no usa wildcards (apunta a un recurso concreto)."""
-    return not any(c in rule.action for c in "*?[") and not any(
-        c in rule.resource for c in "*?["
-    )
+    return not any(c in rule.action for c in "*?[") and not any(c in rule.resource for c in "*?[")
 
 
 class PermissionGate:

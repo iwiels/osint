@@ -12,11 +12,13 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { WraithClient } from "@wraith/sdk";
 import { useStore } from "../store";
+import { createCaseLoadGuard } from "../caseLoadGuard";
 import ErrorBoundary from "./ErrorBoundary";
 import { Button, Icon, IconButton, cn } from "../ui";
 import {
@@ -73,6 +75,8 @@ export default function CaseView({
 }: CaseViewProps) {
   const storeCaseId = useStore((s) => s.activeCaseId);
   const activeCaseId = propCaseId ?? storeCaseId ?? "";
+  const activeCaseIdRef = useRef(activeCaseId);
+  activeCaseIdRef.current = activeCaseId;
 
   const graph = useStore((s) => s.graph);
   const ledger = useStore((s) => s.ledger);
@@ -85,6 +89,7 @@ export default function CaseView({
   const engineOnline = useStore((s) => s.engineOnline);
 
   const [busy, setBusy] = useState(false);
+  const loadGuard = useRef(createCaseLoadGuard());
 
   const activeTab: CaseViewTab = controlledTab ?? storeActiveTab;
 
@@ -95,63 +100,71 @@ export default function CaseView({
 
   const load = async (cid: string) => {
     if (!cid) return;
-    const [gRes, lRes, tRes, cRes] = await Promise.allSettled([
-      client.caseGraph(cid, { maxDepth: 5 }),
-      client.caseLedger(cid),
-      client.caseTimeline(cid, "day"),
-      client.caseCorrelations(cid),
-    ]);
-    const store = useStore.getState();
-    if (gRes.status === "fulfilled") store.setGraph(gRes.value);
-    else console.warn("[wraith] error al cargar grafo:", gRes.reason);
+    const request = loadGuard.current.begin(cid);
+    const requestIsCurrent = () =>
+      loadGuard.current.isCurrent(request, activeCaseIdRef.current) &&
+      (propCaseId !== undefined || useStore.getState().activeCaseId === cid);
+    setBusy(true);
+    try {
+      const [gRes, lRes, tRes, cRes] = await Promise.allSettled([
+        client.caseGraph(cid, { maxDepth: 5 }),
+        client.caseLedger(cid),
+        client.caseTimeline(cid, "day"),
+        client.caseCorrelations(cid),
+      ]);
+      if (!requestIsCurrent()) return;
 
-    if (lRes.status === "fulfilled") store.setLedger(lRes.value);
-    else console.warn("[wraith] error al cargar ledger:", lRes.reason);
+      const store = useStore.getState();
+      if (gRes.status === "fulfilled") store.setGraph(gRes.value);
+      else console.warn("[wraith] error al cargar grafo:", gRes.reason);
 
-    if (tRes.status === "fulfilled") store.setTimeline(tRes.value);
-    else console.warn("[wraith] error al cargar timeline:", tRes.reason);
+      if (lRes.status === "fulfilled") store.setLedger(lRes.value);
+      else console.warn("[wraith] error al cargar ledger:", lRes.reason);
 
-    if (cRes.status === "fulfilled") store.setCorrelations(cRes.value);
-    else console.warn("[wraith] error al cargar correlaciones:", cRes.reason);
+      if (tRes.status === "fulfilled") store.setTimeline(tRes.value);
+      else console.warn("[wraith] error al cargar timeline:", tRes.reason);
 
-    store.setAttestation(null);
+      if (cRes.status === "fulfilled") store.setCorrelations(cRes.value);
+      else console.warn("[wraith] error al cargar correlaciones:", cRes.reason);
+
+      store.setAttestation(null);
+    } finally {
+      if (requestIsCurrent()) setBusy(false);
+    }
   };
 
   useEffect(() => {
-    if (!activeCaseId || !engineOnline) return;
-    let cancelled = false;
-    (async () => {
-      setBusy(true);
-      try {
-        await load(activeCaseId);
-      } catch (err) {
-        if (!cancelled) console.warn("[wraith] error cargando el caso:", err);
-      } finally {
-        if (!cancelled) setBusy(false);
-      }
-    })();
+    if (!activeCaseId || !engineOnline) {
+      setBusy(false);
+      return () => loadGuard.current.invalidate();
+    }
+    void load(activeCaseId).catch((err) => {
+      console.warn("[wraith] error cargando el caso:", err);
+    });
     return () => {
-      cancelled = true;
+      loadGuard.current.invalidate();
     };
   }, [client, activeCaseId, caseDataVersion, engineOnline]);
 
   const refresh = async () => {
     if (!activeCaseId) return;
-    setBusy(true);
-    try {
-      await load(activeCaseId);
-    } finally {
-      setBusy(false);
-    }
+    await load(activeCaseId);
   };
 
   const sealCase = async () => {
     if (!activeCaseId) return;
+    const requestedCaseId = activeCaseId;
+    const caseIsCurrent = () =>
+      activeCaseIdRef.current === requestedCaseId &&
+      (propCaseId !== undefined || useStore.getState().activeCaseId === requestedCaseId);
     setBusy(true);
     try {
-      useStore.getState().setAttestation(await client.caseAttestation(activeCaseId));
+      const result = await client.caseAttestation(requestedCaseId);
+      if (caseIsCurrent()) {
+        useStore.getState().setAttestation(result);
+      }
     } finally {
-      setBusy(false);
+      if (caseIsCurrent()) setBusy(false);
     }
   };
 

@@ -128,7 +128,10 @@ async def test_emit_plan_publica_y_avisa_si_falla(monkeypatch):
 
     assert plan == [{"step": 1, "goal": "Recon", "tools": []}]
     assert events == [
-        ("agent.plan", {"steps": plan, "total_steps": 1, "source": "planner"}),
+        (
+            "agent.plan",
+            {"steps": plan, "total_steps": 1, "source": "planner", "case_id": None},
+        ),
     ]
     payload = json.loads(router.requests[0].content)
     assert payload["messages"][0]["content"] == PLANNER_PROMPT
@@ -170,7 +173,7 @@ async def test_emit_plan_sin_pasos_validos(monkeypatch):
         plan = await _emit_plan(client, CFG, "gpt-4.1", "hola", emit)
 
     assert plan == []
-    assert events == [("agent.plan", {"steps": [], "source": "planner"})]
+    assert events == [("agent.plan", {"steps": [], "source": "planner", "case_id": None})]
 
 
 # --- Streaming ---

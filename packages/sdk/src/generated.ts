@@ -83,6 +83,15 @@ export interface CaseCreatedOut {
   message: string;
 }
 
+export interface CollectorResult {
+  collector_name: string;
+  source_target: string;
+  entities?: EntityNode[];
+  relations?: RelationEdge[];
+  raw_payload?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface EntityNode {
   id: string;
   type: EntityType;
@@ -127,8 +136,24 @@ export interface HealthOut {
   started_at?: string;
 }
 
+export interface MaterializeRequest {
+  permissions?: string[];
+}
+
+export interface RelationEdge {
+  source_id: string;
+  target_id: string;
+  relation_type: RelationType;
+  attributes?: Record<string, unknown>;
+  confidence?: number;
+  first_seen?: string;
+}
+
+export type RelationType = "RESOLVES_TO" | "SUBDOMAIN_OF" | "HOSTED_ON" | "REGISTERED_BY" | "ADMINISTERS" | "USES_ALIAS" | "REGISTERED_WITH" | "CONTAINS_METADATA" | "LOCATED_AT" | "LOCATED_IN" | "VULNERABLE_TO" | "RUNS_PORT" | "EXPOSED_IN" | "ASSOCIATED_WITH" | "CORRELATED_WITH" | "NAMED_ON_DOCUMENT" | "HAS_DOCUMENT" | "HAS_ACCOUNT" | "LINKED_TO" | "OWNS" | "REGISTERED_ON";
+
 export interface RunsCancelRequest {
   session_id?: string | null;
+  run_id?: string | null;
 }
 
 export interface SecretUpsert {

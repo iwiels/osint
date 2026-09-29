@@ -286,9 +286,7 @@ def test_mensajes_con_limite_conserva_los_mas_recientes(tmp_path) -> None:
     assert msgs[-1].seq == 59
 
 
-async def test_cancel_pendiente_no_auto_cancela_el_siguiente_run(
-    tmp_path, monkeypatch
-) -> None:
+async def test_cancel_pendiente_no_auto_cancela_el_siguiente_run(tmp_path, monkeypatch) -> None:
     """Una cancel huérfana de un run anterior no puede detener el siguiente.
 
     `run_id == session_id`: si el Detener llegaba cuando el run ya había

@@ -237,9 +237,7 @@ async def test_call_tool_validated_deniega_sensible_sin_regla(engine_env: Path):
     from engine.registry import ToolPermissionDenied
 
     with pytest.raises(ToolPermissionDenied, match="PERMISSION_REQUIRED"):
-        await call_tool_validated(
-            "investigate_domain", {"case_id": "case-x", "target": "x.test"}
-        )
+        await call_tool_validated("investigate_domain", {"case_id": "case-x", "target": "x.test"})
 
 
 async def test_call_tool_validated_segura_pasa(engine_env: Path):
