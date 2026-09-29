@@ -1,0 +1,21 @@
+id: strong_similardomain_crossref
+version: 1
+meta:
+  name: "Similar domain with strong relationship to target"
+  description: >
+    A similar domain was found to be referenced by the target, and references
+    back, indicating a strong relationship. Strong affiliates indicate potential
+    targets that should be included in the scope of investigation to ensure more
+    complete coverage. This may also indicate typosquatting or brand abuse.
+  risk: INFO
+collections:
+  - collect:
+      - method: regex
+        field: type
+        value: "AFFILIATE_*"
+      - method: regex
+        field: type
+        value: "SIMILAR*"
+aggregation:
+  field: data
+headline: "Similar domain with strong target relationship: {data}"

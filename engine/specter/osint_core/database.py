@@ -177,6 +177,23 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_agent_sessions_case ON agent_sessions(case_id, started_at);
                 CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages(session_id, seq);
+
+                -- Event Sourcing: almacén de eventos inmutables por caso.
+                -- Cada evento es un hecho con hash SHA-256 para integridad.
+                CREATE TABLE IF NOT EXISTS case_events (
+                    id TEXT PRIMARY KEY,
+                    aggregate_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    type TEXT NOT NULL,
+                    data TEXT NOT NULL DEFAULT '{}',
+                    timestamp TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    UNIQUE (aggregate_id, seq)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_case_events_aggregate ON case_events(aggregate_id, seq);
+                CREATE INDEX IF NOT EXISTS idx_case_events_type ON case_events(type);
+                CREATE INDEX IF NOT EXISTS idx_case_events_timestamp ON case_events(timestamp);
                 """
             )
             # Migración incremental: bases creadas antes de la firma HMAC (fase B).
