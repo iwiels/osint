@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import secrets
 import socket
 import subprocess
@@ -30,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BINARY = (
     ROOT / "dist-engine" / ("wraith-engine.exe" if sys.platform == "win32" else "wraith-engine")
 )
-STARTUP_TIMEOUT = 90  # el onefile se extrae al arrancar: en Windows con antivirus tarda
+STARTUP_TIMEOUT = 180  # el onefile se extrae al arrancar: en runners lentos o con antivirus tarda
 
 
 def free_port() -> int:
@@ -68,11 +69,25 @@ def stop(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
+def annotate(message: str) -> None:
+    """Publica el fallo como anotación de GitHub Actions, visible sin abrir los logs del run."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    line = f"::error title=Smoke test del binario::{escaped[:3800]}\n"
+    sys.stdout.flush()
+    sys.stdout.buffer.write(line.encode("utf-8"))  # el runner lee UTF-8, sea cual sea la consola
+    sys.stdout.buffer.flush()
+
+
 def fail(message: str, log: Path | None = None) -> int:
     print(f"[wraith] ✗ {message}", file=sys.stderr)
+    detail = f"{message}\n[{platform.platform()} | {platform.machine()}]"
     if log is not None and log.exists():
         tail = log.read_text(encoding="utf-8", errors="replace").splitlines()[-25:]
         print("[wraith] --- últimas líneas del motor ---\n" + "\n".join(tail), file=sys.stderr)
+        detail += "\n" + "\n".join(tail[-14:])
+    annotate(detail)
     return 1
 
 
