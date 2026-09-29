@@ -150,3 +150,103 @@ async def test_request_run_cancel_marca_runs_y_libera_permisos() -> None:
         agent._pending_permissions.pop("pc", None)
         agent._active_runs.pop("run-x", None)
         agent._cancel_requests.discard("run-x")
+
+
+@pytest.mark.asyncio
+async def test_request_run_cancel_por_run_id_resuelve_preguntas() -> None:
+    """Detener por `run_id` ancla el run exacto y libera la pregunta pendiente.
+
+    Sin esto, una pregunta de `ask_analyst` dejaba el run colgado 300s tras el
+    Detener y la UI seguía mostrando un diálogo cuya respuesta ya nadie leería.
+    """
+    import asyncio
+
+    from engine import agent
+
+    loop = asyncio.get_running_loop()
+    q = agent.QuestionRequest(
+        request_id="qc",
+        questions=[{"question": "¿Seguimos con el pivote?", "header": "", "options": []}],
+        session_id="global",
+    )
+    q.future = loop.create_future()
+    agent._pending_questions["qc"] = q
+    agent._active_runs["run-g"] = "global"
+    agent._active_runs["run-otro"] = "case-9"
+    try:
+        assert agent.request_run_cancel(run_id="run-g") == 1
+        assert "run-g" in agent._cancel_requests
+        assert "run-otro" not in agent._cancel_requests  # sólo el run pedido
+        assert q.status == "unanswered"
+        assert await asyncio.wait_for(q.future, timeout=1) == "unanswered"
+    finally:
+        agent._pending_questions.pop("qc", None)
+        agent._active_runs.pop("run-g", None)
+        agent._active_runs.pop("run-otro", None)
+        agent._cancel_requests.discard("run-g")
+
+
+@pytest.mark.asyncio
+async def test_request_run_cancel_por_case_sigue_funcionando() -> None:
+    """Compatibilidad: la UI puede seguir enviando el case_id (ámbito)."""
+    import asyncio
+
+    from engine import agent
+
+    loop = asyncio.get_running_loop()
+    req = PermissionRequest(
+        request_id="pc2", tool_name="link_entities", arguments={}, session_id="case-7"
+    )
+    req.future = loop.create_future()
+    agent._pending_permissions["pc2"] = req
+    agent._active_runs["run-c7"] = "case-7"
+    try:
+        assert agent.request_run_cancel("case-7") == 1
+        assert "run-c7" in agent._cancel_requests
+        assert await asyncio.wait_for(req.future, timeout=1) == "denied"
+    finally:
+        agent._pending_permissions.pop("pc2", None)
+        agent._active_runs.pop("run-c7", None)
+        agent._cancel_requests.discard("run-c7")
+
+
+@pytest.mark.asyncio
+async def test_ask_analyst_devuelve_unanswered_si_el_run_se_detiene() -> None:
+    """Tras un Detener, `ask_analyst` devuelve UNANSWERED, no ANSWERED vacío.
+
+    Devolver `ANSWERED` con lista de respuestas vacías haría creer al modelo
+    que el analista respondió "nada" cuando en realidad nadie respondió.
+    """
+    import asyncio
+    import json as _json
+
+    from engine import agent
+
+    events: list[tuple[str, dict]] = []
+
+    async def emit(event_type: str, payload: dict) -> None:
+        events.append((event_type, payload))
+
+    agent._active_runs["run-q"] = "case-q"
+    task = asyncio.create_task(
+        agent._ask_analyst(
+            {"questions": [{"question": "¿Vigilar el subdominio?"}]}, "case-q", emit
+        )
+    )
+    try:
+        for _ in range(200):
+            if agent._pending_questions:
+                break
+            await asyncio.sleep(0.005)
+        assert agent._pending_questions, "la pregunta debió registrarse"
+        rid = next(iter(agent._pending_questions))
+
+        assert agent.request_run_cancel(run_id="run-q") == 1
+        result = _json.loads(await asyncio.wait_for(task, timeout=2))
+        assert result["status"] == "UNANSWERED"
+        assert rid not in agent._pending_questions
+    finally:
+        agent._active_runs.pop("run-q", None)
+        agent._cancel_requests.discard("run-q")
+        if not task.done():
+            task.cancel()

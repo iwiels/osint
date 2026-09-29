@@ -65,6 +65,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   const startNewSession = useStore((s) => s.startNewSession);
   const agentBusy = useStore((s) => s.agentBusy);
   const setAgentBusy = useStore((s) => s.setAgentBusy);
+  const activeRunId = useStore((s) => s.activeRunId);
   const provider = useStore((s) => s.provider);
   const activeCaseId = useStore((s) => s.activeCaseId);
   const cases = useStore((s) => s.cases);
@@ -116,7 +117,11 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
     stopRequestedRef.current = true;
     abortRef.current?.abort();
     // Cancelación cooperativa en servidor: el loop la observa entre iteraciones.
-    void client.cancelRuns(activeCaseId ?? undefined).catch(() => undefined);
+    // El run_id (si lo tenemos) es el ancla exacta; el case_id sólo acierta
+    // cuando el run está ámbito a un caso (un run global no se detenía).
+    void client
+      .cancelRuns(activeCaseId ?? undefined, activeRunId ?? undefined)
+      .catch(() => undefined);
     setAgentBusy(false);
     pushMessage({ role: "system", content: "Investigación detenida por el analista." });
     // Las tool calls en vuelo nunca recibirán su `tool.completed`: el servidor
@@ -124,7 +129,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
     // grupo de operaciones se queda girando como si el run siguiera vivo.
     useStore.getState().interruptRunningTools();
     useStore.getState().closeStream();
-  }, [client, activeCaseId, pushMessage, setAgentBusy]);
+  }, [client, activeCaseId, activeRunId, pushMessage, setAgentBusy]);
 
   const send = async () => {
     const message = input.trim();
@@ -180,6 +185,9 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
     } finally {
       abortRef.current = null;
       setAgentBusy(false);
+      // Sin agent.completed (error de transporte), el run_id no debe quedar
+      // apuntando a un run que ya no existe.
+      useStore.getState().setActiveRunId(null);
       setHistoryView(null);
       bumpSessions();
       bumpCaseData();

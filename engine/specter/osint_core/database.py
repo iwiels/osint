@@ -814,10 +814,17 @@ class Database:
             return True
 
     def get_agent_session_messages(self, session_id: str, limit: int = 500) -> list[AgentMessage]:
-        """Transcripción ordenada de una sesión del agente."""
+        """Transcripción ordenada de una sesión del agente.
+
+        El límite corta por el FINAL: con `ASC LIMIT` puro se quedaban los n
+        mensajes más ANTIGUOS y el agente reconstruía su contexto con la cola
+        vieja de la conversación, olvidando todo lo reciente en sesiones largas.
+        """
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT * FROM agent_messages WHERE session_id = ? ORDER BY seq ASC LIMIT ?",
+                "SELECT * FROM ("
+                "SELECT * FROM agent_messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?"
+                ") ORDER BY seq ASC",
                 (session_id, max(1, limit)),
             )
             return [

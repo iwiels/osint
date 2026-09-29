@@ -146,6 +146,9 @@ interface WraithState {
   completeToolCall: (callId: string, tool: string, result: string) => void;
   /** Cierra las tool calls en vuelo al detener el run: ya no recibirán su `tool.completed`. */
   interruptRunningTools: () => void;
+  /** run_id del run en vuelo (evento `agent.started`): ancla exacta del Stop. */
+  activeRunId: string | null;
+  setActiveRunId: (id: string | null) => void;
   // Permisos: cola. El agente ejecuta los tool calls de un turno en paralelo
   // y cada tool sensible emite su propia `permission.request`; con un único
   // hueco la última petición tapaba a la anterior y esa nunca se respondía
@@ -294,6 +297,8 @@ export const useStore = create<WraithState>((set, get) => ({
   pushMessage: (msg) =>
     set((s) => ({ chat: [...s.chat, { ...msg, id: newMessageId(), ts: Date.now() }] })),
   setAgentBusy: (busy) => set({ agentBusy: busy }),
+  activeRunId: null,
+  setActiveRunId: (id) => set({ activeRunId: id }),
   setProvider: (p) => set((s) => ({ provider: { ...s.provider, ...p } })),
   setRunOptions: (o) => set((s) => ({ runOptions: { ...s.runOptions, ...o } })),
 

@@ -282,6 +282,9 @@ class AgentPermission(BaseModel):
 
 class RunsCancelRequest(BaseModel):
     session_id: str | None = None
+    # Ancla exacta del Stop (la UI la saca de `agent.started`); si va, manda
+    # sobre session_id.
+    run_id: str | None = None
 
 
 class AgentQuestionReply(BaseModel):
@@ -717,7 +720,8 @@ async def agent_runs_cancel(body: RunsCancelRequest) -> dict[str, Any]:
     """Detiene runs en vuelo (botón Detener de la UI). Cooperativo."""
     from engine import agent
 
-    return {"status": "ok", "cancelled": agent.request_run_cancel(body.session_id)}
+    cancelled = agent.request_run_cancel(body.session_id, run_id=body.run_id)
+    return {"status": "ok", "cancelled": cancelled}
 
 
 @app.get("/settings/secrets")
