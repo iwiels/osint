@@ -23,6 +23,15 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   la suite de tests por uno sintético, y corregidos los CUIT del ejemplo del
   playbook, que estaban mal calculados. La documentación y los tests usan ahora
   identificadores ficticios por convención.
+- **Sustituidos los correos con dominio real usados como fixture** en los tests
+  (`analista.cero@ejemplo.test`, `juan.perez@ejemplo.test`) por direcciones en el
+  dominio reservado `.test`, que no puede pertenecer a nadie.
+- **Purgado el historial de git.** Los datos anteriores seguían alcanzables en
+  commits antiguos, así que se reescribió la historia para eliminarlos: borrarlos
+  del árbol de trabajo no basta, porque publicar el repositorio los expondría
+  igualmente. Se eliminaron también `engine/data/specter_osint.db` (una base de
+  datos de caso vacía, pero artefacto de runtime que nunca debió versionarse) y
+  `.coverage`.
 - Anonimizados tests y docstrings: toda persona de ejemplo es sintética
   (`Carlos Andres Mendoza Garcia`, `cmendozagarcia@ejemplo.test`).
 - Eliminados datos de investigación real del repositorio (base de datos de caso,
