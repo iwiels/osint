@@ -70,4 +70,4 @@ async def test_email_investigator():
 
     domain_nodes = [e for e in result.entities if e.type == EntityType.DOMAIN]
     assert len(domain_nodes) == 1
-    assert domain_nodes[0].value == "proton.me"
+    assert domain_nodes[0].value == "ejemplo.test"
