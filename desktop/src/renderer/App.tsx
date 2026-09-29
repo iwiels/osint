@@ -346,7 +346,7 @@ export default function App() {
             <span className="font-display text-[13px] font-semibold tracking-tight text-text-strong">
               Wraith<span className="text-text-brand">OSINT</span>
             </span>
-            <Tag>v0.2.0</Tag>
+            <Tag>v{__APP_VERSION__}</Tag>
           </div>
 
           {activeCase ? (

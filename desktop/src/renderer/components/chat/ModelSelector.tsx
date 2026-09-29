@@ -204,7 +204,7 @@ export function ModelSelector({ open, onOpenChange, client }: ModelSelectorProps
           {/* Pie de navegación */}
           <div className="border-t border-border-weak-base pt-2.5 px-2 flex items-center justify-between font-mono text-[10px] text-text-weaker">
             <span>WraithOSINT</span>
-            <span>v0.2.0</span>
+            <span>v{__APP_VERSION__}</span>
           </div>
         </div>
 
@@ -508,7 +508,7 @@ export function ModelSelector({ open, onOpenChange, client }: ModelSelectorProps
                       </div>
                     </div>
                     <span className="font-mono text-[11px] text-text-weak px-2 py-0.5 rounded bg-surface-inset-base border border-border-weak-base">
-                      v0.2.0
+                      v{__APP_VERSION__}
                     </span>
                   </div>
 
