@@ -1225,6 +1225,7 @@ async def run_agent(
             "usage": usage,
             "streaming": use_stream,
             "case_id": case_id,
+            "run_id": run_id,
         },
     )
 

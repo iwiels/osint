@@ -54,6 +54,20 @@ export interface PanelState {
 
 export type MainTab = "graph" | "timeline" | "correlations" | "ledger";
 
+export function selectPendingPermissionForCase(
+  queue: PermissionRequestPayload[],
+  activeCaseId: string | null,
+): PermissionRequestPayload | null {
+  return queue.find((request) => request.case_id === activeCaseId) ?? null;
+}
+
+export function selectPendingQuestionForCase(
+  question: QuestionAskedPayload | null,
+  activeCaseId: string | null,
+): QuestionAskedPayload | null {
+  return question?.case_id === activeCaseId ? question : null;
+}
+
 /**
  * Umbral de ventana estrecha por panel: por debajo, el panel arranca plegado y
  * se pliega solo al cruzar el umbral (el analista puede reabrirlo con Ctrl+B /
@@ -148,7 +162,8 @@ interface WraithState {
   interruptRunningTools: () => void;
   /** run_id del run en vuelo (evento `agent.started`): ancla exacta del Stop. */
   activeRunId: string | null;
-  setActiveRunId: (id: string | null) => void;
+  activeRunCaseId: string | null;
+  setActiveRun: (id: string | null, caseId: string | null) => void;
   // Permisos: cola. El agente ejecuta los tool calls de un turno en paralelo
   // y cada tool sensible emite su propia `permission.request`; con un único
   // hueco la última petición tapaba a la anterior y esa nunca se respondía
@@ -298,7 +313,8 @@ export const useStore = create<WraithState>((set, get) => ({
     set((s) => ({ chat: [...s.chat, { ...msg, id: newMessageId(), ts: Date.now() }] })),
   setAgentBusy: (busy) => set({ agentBusy: busy }),
   activeRunId: null,
-  setActiveRunId: (id) => set({ activeRunId: id }),
+  activeRunCaseId: null,
+  setActiveRun: (id, caseId) => set({ activeRunId: id, activeRunCaseId: caseId }),
   setProvider: (p) => set((s) => ({ provider: { ...s.provider, ...p } })),
   setRunOptions: (o) => set((s) => ({ runOptions: { ...s.runOptions, ...o } })),
 

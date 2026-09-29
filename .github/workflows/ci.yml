@@ -89,5 +89,8 @@ jobs:
       - name: Tests del SDK + coverage gate
         run: npm test
 
+      - name: Tests del renderer desktop
+        run: npm run test:desktop
+
       - name: Build de producción del desktop
         run: npm run build

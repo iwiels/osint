@@ -161,8 +161,8 @@ export default function App() {
                 // El run arrancó: guardamos su run_id para poder detenerlo con
                 // precisión (session_id sólo acierta si el run tiene caso).
                 "agent.started": (payload) => {
-                  const p = payload as { run_id?: string };
-                  useStore.getState().setActiveRunId(p.run_id ?? null);
+                  const p = payload as { run_id?: string; case_id?: string | null };
+                  useStore.getState().setActiveRun(p.run_id ?? null, p.case_id ?? null);
                 },
                 "tool.started": (payload) => {
                   if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;
@@ -217,19 +217,27 @@ export default function App() {
                   });
                 },
                 "agent.completed": (payload) => {
-                  const p = payload as { usage?: { input_tokens: number; output_tokens: number } };
+                  const p = payload as {
+                    run_id?: string;
+                    case_id?: string | null;
+                    usage?: { input_tokens: number; output_tokens: number };
+                  };
                   const store = useStore.getState();
-                  if (isPayloadForActiveCase(payload, store.activeCaseId)) {
+                  const isVisibleCase = isPayloadForActiveCase(payload, store.activeCaseId);
+                  const isTrackedRun = p.run_id != null && store.activeRunId === p.run_id;
+                  if (isVisibleCase) {
                     store.closeStream();
                     store.setUsage(p.usage ?? null);
                     store.bumpSessions();
-                    if ((payload as { case_id?: string | null }).case_id !== null) {
+                    if (p.case_id !== null) {
                       store.bumpCaseData();
                     }
                   }
-                  useStore.getState().clearPermissions();
-                  useStore.getState().setPendingQuestion(null);
-                  useStore.getState().setActiveRunId(null);
+                  if (isTrackedRun || (p.run_id == null && isVisibleCase)) {
+                    store.clearPermissions();
+                    store.setPendingQuestion(null);
+                    if (isTrackedRun) store.setActiveRun(null, null);
+                  }
                 },
                 "agent.rate_limited": (payload) => {
                   if (!isPayloadForActiveCase(payload, useStore.getState().activeCaseId)) return;

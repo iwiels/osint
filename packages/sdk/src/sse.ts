@@ -36,6 +36,7 @@ export interface PermissionRequestPayload {
   tool: string;
   arguments: Record<string, unknown>;
   session_id?: string;
+  case_id?: string | null;
 }
 
 /** Payloads ligados a un expediente; `null` representa un run global. */
@@ -73,6 +74,7 @@ export interface QuestionAskedPayload {
   request_id: string;
   questions: AnalystQuestion[];
   session_id?: string;
+  case_id?: string | null;
 }
 
 export interface ToolEventPayload {
@@ -131,6 +133,7 @@ export interface AgentStartedPayload {
   provider: string;
   model: string;
   case_id: string | null;
+  run_id?: string;
   streaming?: boolean;
   max_iterations?: number;
 }
@@ -141,6 +144,7 @@ export interface AgentCompletedPayload {
   usage?: AgentUsage;
   streaming?: boolean;
   case_id?: string | null;
+  run_id?: string;
 }
 
 export type EventHandlers = {

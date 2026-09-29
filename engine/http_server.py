@@ -842,7 +842,14 @@ async def agent_run(body: AgentRunRequest) -> dict[str, Any]:
             raise HTTPException(status_code=404, detail=f"Caso {body.case_id} no existe")
 
     async def emit(event_type: str, payload: dict[str, Any]) -> None:
-        bus.publish(event_type, payload)
+        # Scope every run event at the API boundary. Prompt and retry events
+        # are emitted by helpers that do not otherwise know the active case;
+        # the renderer uses this field to keep one case's live state out of
+        # another case's view.
+        scoped_payload = payload
+        if "case_id" not in payload:
+            scoped_payload = {**payload, "case_id": body.case_id}
+        bus.publish(event_type, scoped_payload)
 
     try:
         result = await agent.run_agent(

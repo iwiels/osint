@@ -12,7 +12,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WraithClient } from "@wraith/sdk";
-import { useStore } from "../store";
+import {
+  selectPendingPermissionForCase,
+  selectPendingQuestionForCase,
+  useStore,
+} from "../store";
 import type { ChatMessage as ChatMessageType } from "../store";
 import { Button, Icon, Tag, useAutoScroll } from "../ui";
 import {
@@ -66,6 +70,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   const agentBusy = useStore((s) => s.agentBusy);
   const setAgentBusy = useStore((s) => s.setAgentBusy);
   const activeRunId = useStore((s) => s.activeRunId);
+  const activeRunCaseId = useStore((s) => s.activeRunCaseId);
   const provider = useStore((s) => s.provider);
   const activeCaseId = useStore((s) => s.activeCaseId);
   const cases = useStore((s) => s.cases);
@@ -79,8 +84,12 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   const setHistoryView = useStore((s) => s.setHistoryView);
   const bumpSessions = useStore((s) => s.bumpSessions);
   const bumpCaseData = useStore((s) => s.bumpCaseData);
-  const pendingPermission = useStore((s) => s.pendingPermission);
-  const pendingQuestion = useStore((s) => s.pendingQuestion);
+  const pendingPermission = useStore((s) =>
+    selectPendingPermissionForCase(s.permissionQueue, s.activeCaseId),
+  );
+  const pendingQuestion = useStore((s) =>
+    selectPendingQuestionForCase(s.pendingQuestion, s.activeCaseId),
+  );
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
 
   const [input, setInput] = useState("");
@@ -116,20 +125,22 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
   const stop = useCallback(() => {
     stopRequestedRef.current = true;
     abortRef.current?.abort();
-    // Cancelación cooperativa en servidor: el loop la observa entre iteraciones.
-    // El run_id (si lo tenemos) es el ancla exacta; el case_id sólo acierta
-    // cuando el run está ámbito a un caso (un run global no se detenía).
+    const runCaseId = activeRunId ? activeRunCaseId : activeCaseId;
+    // Preserve the run's original case after the analyst switches cases. The
+    // run_id remains the exact cancellation anchor, including for global runs.
     void client
-      .cancelRuns(activeCaseId ?? undefined, activeRunId ?? undefined)
+      .cancelRuns(runCaseId ?? undefined, activeRunId ?? undefined)
       .catch(() => undefined);
     setAgentBusy(false);
-    pushMessage({ role: "system", content: "Investigación detenida por el analista." });
+    if (useStore.getState().activeCaseId === runCaseId) {
+      pushMessage({ role: "system", content: "Investigación detenida por el analista." });
+    }
     // Las tool calls en vuelo nunca recibirán su `tool.completed`: el servidor
     // ya canceló la iteración. Sin esto quedan en `running` para siempre y el
     // grupo de operaciones se queda girando como si el run siguiera vivo.
     useStore.getState().interruptRunningTools();
     useStore.getState().closeStream();
-  }, [client, activeCaseId, activeRunId, pushMessage, setAgentBusy]);
+  }, [client, activeCaseId, activeRunId, activeRunCaseId, pushMessage, setAgentBusy]);
 
   const send = async () => {
     const message = input.trim();
@@ -147,6 +158,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
     forceScrollToBottom();
     const controller = new AbortController();
     abortRef.current = controller;
+    let completedRunId: string | null = null;
 
     try {
       const result = await client.agentRun(
@@ -164,6 +176,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
         },
         { signal: controller.signal },
       );
+      completedRunId = result.session_id;
 
       const runCaseIsActive = useStore.getState().activeCaseId === runCaseId;
       if (result.session_id && runCaseIsActive) {
@@ -191,7 +204,13 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
       setAgentBusy(false);
       // Sin agent.completed (error de transporte), el run_id no debe quedar
       // apuntando a un run que ya no existe.
-      useStore.getState().setActiveRunId(null);
+      const run = useStore.getState();
+      if (
+        run.activeRunCaseId === runCaseId &&
+        (!completedRunId || run.activeRunId === completedRunId)
+      ) {
+        run.setActiveRun(null, null);
+      }
       if (useStore.getState().activeCaseId === runCaseId) {
         setHistoryView(null);
         bumpSessions();

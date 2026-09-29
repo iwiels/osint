@@ -634,3 +634,54 @@ async def test_agent_run_acepta_session_id(engine, monkeypatch) -> None:
     assert res.status_code == 200
     assert res.json()["session_id"] == "sess-existente-123"
     assert called_kwargs.get("session_id") == "sess-existente-123"
+
+
+async def test_agent_events_include_the_run_case_scope(engine, monkeypatch) -> None:
+    """Every SSE event from a case run carries its case_id, including prompts."""
+    from engine import agent
+
+    async def mock_run_agent(**kwargs):
+        await kwargs["emit"](
+            "permission.request",
+            {"request_id": "perm-1", "tool": "investigate_domain", "arguments": {}},
+        )
+        await kwargs["emit"](
+            "question.asked",
+            {"request_id": "question-1", "questions": [], "session_id": "session-1"},
+        )
+        return {
+            "status": "COMPLETED",
+            "provider": kwargs["provider"],
+            "model": "test-model",
+            "session_id": "session-1",
+            "iterations": 1,
+            "tools_used": [],
+            "final_message": "Ok",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+
+    monkeypatch.setattr(agent, "run_agent", mock_run_agent)
+    event_queue = engine.bus.subscribe()
+    transport = httpx.ASGITransport(app=engine.app)
+
+    try:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test", headers=TEST_AUTH_HEADERS
+        ) as client:
+            created = await client.post(
+                "/cases",
+                json={"name": "Scope test", "description": "synthetic test case"},
+            )
+            case_id = created.json()["case_id"]
+            response = await client.post(
+                "/agent/run",
+                json={"message": "continue", "case_id": case_id, "provider": "opencode"},
+            )
+        assert response.status_code == 200
+        events = [event_queue.get_nowait() for _ in range(event_queue.qsize())]
+    finally:
+        engine.bus.unsubscribe(event_queue)
+
+    payloads = {event["type"]: event["payload"] for event in events}
+    assert payloads["permission.request"]["case_id"] == case_id
+    assert payloads["question.asked"]["case_id"] == case_id
