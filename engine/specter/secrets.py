@@ -35,6 +35,12 @@ ALLOWED_SECRETS: dict[str, str] = {
     "censys_api_id": "CENSYS_API_ID",
     "censys_api_secret": "CENSYS_API_SECRET",
     "hibp_api_key": "HIBP_API_KEY",
+    # Colectores de empresa y blockchain con key opcional
+    "clearbit_api_key": "CLEARBIT_API_KEY",
+    "fullcontact_api_key": "FULLCONTACT_API_KEY",
+    "etherscan_api_key": "ETHERSCAN_API_KEY",
+    # Passive DNS con key (Fase B)
+    "dnsdb_api_key": "DNSDB_API_KEY",
 }
 
 PROVIDER_SECRETS: dict[str, str] = {

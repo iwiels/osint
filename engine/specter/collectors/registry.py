@@ -23,11 +23,116 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from specter.collectors.base import BaseCollector
+from specter.collectors.blockchain import (
+    BitcoinAbuseCollector,
+    BitcoinWhoIsWhoCollector,
+    BlockchainInfoCollector,
+    EtherscanCollector,
+)
+from specter.collectors.breach_data import (
+    HaveIBeenPwnedCollector,
+    IntelligenceXCollector,
+    LeakIXCollector,
+    LeakLookupCollector,
+)
+from specter.collectors.cloud_buckets import (
+    AzureBlobFinderCollector,
+    DigitalOceanSpaceFinderCollector,
+    GoogleCloudStorageFinderCollector,
+    GrayhatWarfareCollector,
+    S3BucketFinderCollector,
+)
+from specter.collectors.company_data import (
+    ClearbitCollector,
+    FullContactCollector,
+    GLEIFCollector,
+    OpenCorporatesCollector,
+)
+from specter.collectors.darkweb import (
+    AhmiaCollector,
+    OnionLinkCollector,
+    TorCHCollector,
+)
+from specter.collectors.dns_bruteforce import DNSBruteForceCollector
+from specter.collectors.dns_zonexfer import DNSZoneTransferCollector
+from specter.collectors.external_tools import (
+    CMSeeKDetectorCollector,
+    NmapScannerCollector,
+    NucleiScannerCollector,
+    RetireJSScannerCollector,
+    SnallygasterScannerCollector,
+    TestSSLScannerCollector,
+    TruffleHogScannerCollector,
+    WAFW00FDetectorCollector,
+    WhatWebScannerCollector,
+)
+from specter.collectors.extractors import (
+    CreditCardExtractorCollector,
+    EmailExtractorCollector,
+    HashExtractorCollector,
+    IBANExtractorCollector,
+    NameExtractorCollector,
+    PhoneExtractorCollector,
+)
+from specter.collectors.passive_dns import (
+    CIRCLPassiveDNSCollector,
+    DNSDBChecker,
+    DNSGrepCollector,
+    MnemonicPassiveDNSCollector,
+)
+from specter.collectors.portscan import PortScanCollector
+from specter.collectors.public_info import (
+    HostingProviderIdentifierCollector,
+    PasteBinSearchCollector,
+    PGPKeyServerCollector,
+    TORExitNodeCollector,
+    WikipediaEditsCollector,
+    ZoneHDefacementCollector,
+)
+from specter.collectors.search_engines import (
+    BingSearchCollector,
+    CommonCrawlCollector,
+    DuckDuckGoCollector,
+    GrepAppCollector,
+    SearchcodeCollector,
+)
+from specter.collectors.similar_domains import (
+    SimilarDomainFinderCollector,
+    TLDSearchCollector,
+)
+from specter.collectors.social_media import (
+    FlickrCollector,
+    KeybaseCollector,
+    MySpaceCollector,
+    SlideShareCollector,
+    TwitterCollector,
+    VenmoCollector,
+)
+from specter.collectors.subdomain_takeover import SubdomainTakeoverCollector
 from specter.collectors.threatintel_enhanced import (
     CensysCollector,
-    HaveIBeenPwnedCollector,
     ShodanCollector,
     VirusTotalCollector,
+)
+from specter.collectors.threatintel_free import (
+    AlienVaultOTXCollector,
+    BlocklistCollector,
+    DroneBLCollector,
+    MalwarePatrolCollector,
+    OpenPhishCollector,
+    PhishTankCollector,
+    SpamhausCollector,
+    ThreatCrowdCollector,
+    ThreatMinerCollector,
+)
+from specter.collectors.web_analytics import WebAnalyticsExtractorCollector
+from specter.collectors.web_spider import WebSpiderCollector
+from specter.collectors.web_tech import (
+    CookieExtractorCollector,
+    ErrorStringExtractorCollector,
+    StrangeHeadersCollector,
+    WebFrameworkIdentifierCollector,
+    WebServerIdentifierCollector,
 )
 
 ENTRY_POINT_GROUP = "specter.collectors"
@@ -38,6 +143,120 @@ ENHANCED_COLLECTORS = (
     CensysCollector,
     VirusTotalCollector,
     HaveIBeenPwnedCollector,
+)
+
+SEARCH_ENGINE_COLLECTORS = (
+    DuckDuckGoCollector,
+    BingSearchCollector,
+    CommonCrawlCollector,
+    GrepAppCollector,
+    SearchcodeCollector,
+)
+
+BREACH_DATA_COLLECTORS = (
+    HaveIBeenPwnedCollector,
+    LeakLookupCollector,
+    LeakIXCollector,
+    IntelligenceXCollector,
+)
+
+FREE_COLLECTORS = (
+    AlienVaultOTXCollector,
+    ThreatCrowdCollector,
+    ThreatMinerCollector,
+    PhishTankCollector,
+    OpenPhishCollector,
+    MalwarePatrolCollector,
+    SpamhausCollector,
+    BlocklistCollector,
+    DroneBLCollector,
+    SubdomainTakeoverCollector,
+    DNSZoneTransferCollector,
+    DNSBruteForceCollector,
+    PortScanCollector,
+    WebSpiderCollector,
+    EmailExtractorCollector,
+    PhoneExtractorCollector,
+    NameExtractorCollector,
+    HashExtractorCollector,
+    CreditCardExtractorCollector,
+    IBANExtractorCollector,
+    WebAnalyticsExtractorCollector,
+    WebFrameworkIdentifierCollector,
+    WebServerIdentifierCollector,
+    StrangeHeadersCollector,
+    CookieExtractorCollector,
+    ErrorStringExtractorCollector,
+)
+
+CLOUD_BUCKET_COLLECTORS = (
+    S3BucketFinderCollector,
+    AzureBlobFinderCollector,
+    DigitalOceanSpaceFinderCollector,
+    GoogleCloudStorageFinderCollector,
+    GrayhatWarfareCollector,
+)
+
+COMPANY_DATA_COLLECTORS = (
+    OpenCorporatesCollector,
+    GLEIFCollector,
+    ClearbitCollector,
+    FullContactCollector,
+)
+
+BLOCKCHAIN_COLLECTORS = (
+    BitcoinWhoIsWhoCollector,
+    BitcoinAbuseCollector,
+    BlockchainInfoCollector,
+    EtherscanCollector,
+)
+
+PASSIVE_DNS_COLLECTORS = (
+    DNSGrepCollector,
+    MnemonicPassiveDNSCollector,
+    CIRCLPassiveDNSCollector,
+    DNSDBChecker,
+)
+
+DARKWEB_COLLECTORS = (
+    AhmiaCollector,
+    TorCHCollector,
+    OnionLinkCollector,
+)
+
+SIMILAR_DOMAIN_COLLECTORS = (
+    SimilarDomainFinderCollector,
+    TLDSearchCollector,
+)
+
+PUBLIC_INFO_COLLECTORS = (
+    PasteBinSearchCollector,
+    WikipediaEditsCollector,
+    ZoneHDefacementCollector,
+    PGPKeyServerCollector,
+    HostingProviderIdentifierCollector,
+    TORExitNodeCollector,
+)
+
+EXTERNAL_TOOLS_COLLECTORS = (
+    CMSeeKDetectorCollector,
+    NucleiScannerCollector,
+    NmapScannerCollector,
+    RetireJSScannerCollector,
+    SnallygasterScannerCollector,
+    TestSSLScannerCollector,
+    TruffleHogScannerCollector,
+    WAFW00FDetectorCollector,
+    WhatWebScannerCollector,
+)
+
+SOCIAL_MEDIA_COLLECTORS = (
+    FlickrCollector,
+    KeybaseCollector,
+    MySpaceCollector,
+    SlideShareCollector,
+    TwitterCollector,
+    VenmoCollector,
 )
 
 
@@ -65,6 +284,52 @@ class CollectorRegistry:
     def register_enhanced_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
         """Registra los colectores avanzados (Shodan, Censys, VirusTotal, HIBP)."""
         return [self.register(cls(), origin=origin) for cls in ENHANCED_COLLECTORS]
+
+    def register_free_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
+        """Registra los colectores gratuitos sin API key (OTX, ThreatCrowd, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in FREE_COLLECTORS]
+
+    def register_search_engine_collectors(
+        self, origin: str = BUILTIN_ORIGIN
+    ) -> list[CollectorSpec]:
+        """Registra los colectores de motores de búsqueda (DuckDuckGo, Bing, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in SEARCH_ENGINE_COLLECTORS]
+
+    def register_breach_data_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
+        """Registra los colectores de brechas de datos (HIBP, LeakLookup, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in BREACH_DATA_COLLECTORS]
+
+    def register_cloud_bucket_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
+        """Registra los colectores de cloud buckets (S3, Azure, GCS, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in CLOUD_BUCKET_COLLECTORS]
+
+    def register_company_data_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
+        """Registra los colectores de datos de empresa (OpenCorporates, GLEIF, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in COMPANY_DATA_COLLECTORS]
+
+    def register_blockchain_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
+        """Registra los colectores de blockchain (Bitcoin, Ethereum, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in BLOCKCHAIN_COLLECTORS]
+
+    def register_similar_domain_collectors(
+        self, origin: str = BUILTIN_ORIGIN
+    ) -> list[CollectorSpec]:
+        """Registra los colectores de dominios similares (typosquatting, TLDs)."""
+        return [self.register(cls(), origin=origin) for cls in SIMILAR_DOMAIN_COLLECTORS]
+
+    def register_public_info_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
+        """Registra los colectores de información pública (PasteBin, Wikipedia, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in PUBLIC_INFO_COLLECTORS]
+
+    def register_external_tools_collectors(
+        self, origin: str = BUILTIN_ORIGIN
+    ) -> list[CollectorSpec]:
+        """Registra los colectores de herramientas externas (nmap, nuclei, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in EXTERNAL_TOOLS_COLLECTORS]
+
+    def register_social_media_collectors(self, origin: str = BUILTIN_ORIGIN) -> list[CollectorSpec]:
+        """Registra los colectores de social media (Twitter, Flickr, etc.)."""
+        return [self.register(cls(), origin=origin) for cls in SOCIAL_MEDIA_COLLECTORS]
 
     def unregister(self, name: str) -> bool:
         return self._collectors.pop(name, None) is not None

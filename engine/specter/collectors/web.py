@@ -35,6 +35,10 @@ from specter.osint_core.models import (
 
 DDG_HTML_URL = "https://html.duckduckgo.com/html/"
 SEARCH_TIMEOUT = 25.0
+# El fallback HTML de DDG corre en serie, después de los motores. Le damos un
+# presupuesto propio y corto: es una red de seguridad, no la vía principal, y
+# bloquea el resto de la búsqueda mientras espera.
+DDG_HTML_TIMEOUT = 8.0
 FETCH_TIMEOUT_DEFAULT = 30.0
 FETCH_TIMEOUT_MAX = 120.0
 FETCH_MAX_BYTES = 5 * 1024 * 1024
@@ -267,7 +271,11 @@ def html_to_text(body: bytes) -> tuple[str, str]:
 class WebSearchCollector(BaseCollector):
     """Búsqueda web pasiva en varios índices con cobertura por proveedor."""
 
-    ENGINES = ("bing", "ddg", "google")
+    # mojeek entra como red de seguridad: motor independiente, sin captcha y
+    # con markup estable, para cuando Google da captcha y DDG/Bing se bloquean
+    # o cambian el HTML. Contexto aislado por motor: uno caído no arrastra a los
+    # demás (antes compartían un único contexto y se mataban en cascada).
+    ENGINES = ("bing", "ddg", "google", "mojeek")
 
     def __init__(self):
         super().__init__(name="web_search")
@@ -343,7 +351,11 @@ class WebSearchCollector(BaseCollector):
                     DDG_HTML_URL,
                     data={"q": query},
                     headers=headers,
-                    timeout=SEARCH_TIMEOUT,
+                    # Vía secundaria y best-effort: si el host no responde (típico
+                    # cuando está filtrado en la red), esperar 25s en secuelencia
+                    # quema el presupuesto entero y la diferencia entre "devuelve
+                    # resultados" y "expira todo" es justo esta espera.
+                    timeout=DDG_HTML_TIMEOUT,
                 )
                 if response.status_code >= 400:
                     provider_reports["ddg_html"] = {
