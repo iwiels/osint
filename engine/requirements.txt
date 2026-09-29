@@ -29,5 +29,7 @@ patchright>=1.49.0
 shodan>=1.31.0
 censys>=2.3.0
 holehe>=1.61
-maigret>=0.1.7
+# Newer Maigret releases require networkx<3, which conflicts with our >=3.2.
+# Keep this at the compatible release already selected in uv.lock.
+maigret==0.1.7
 diskcache>=5.6.3
