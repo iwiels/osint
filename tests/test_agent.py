@@ -7,10 +7,9 @@ con consecuencias de seguridad.
 from __future__ import annotations
 
 import pytest
+from specter.osint_core.permission_gate import SAFE_TOOLS, SENSITIVE_TOOLS
 
 from engine.agent import (
-    SAFE_TOOLS,
-    SENSITIVE_TOOLS,
     PermissionRequest,
     respond_permission,
 )

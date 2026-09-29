@@ -69,9 +69,11 @@ from specter.osint_core.models import (
     TimelineReport,
     current_utc_iso,
 )
+from specter.osint_core.permission_gate import _check_tool_permission
 
 from engine import ENGINE_VERSION
 from engine.registry import (
+    ToolPermissionDenied,
     call_tool_validated,
     get_registry_tools,
     get_tool_schemas,
@@ -458,10 +460,13 @@ async def compact_result(body: CollectorResult) -> dict[str, Any]:
 
 @app.post("/cases", response_model=CaseCreatedOut)
 async def create_case_endpoint(body: CaseCreate) -> dict[str, Any]:
-    raw = await call_tool_validated(
-        "create_case",
-        {"name": body.name, "description": body.description, "investigator": body.investigator},
-    )
+    try:
+        raw = await call_tool_validated(
+            "create_case",
+            {"name": body.name, "description": body.description, "investigator": body.investigator},
+        )
+    except ToolPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     result = json.loads(raw)
     if result.get("status") != "CASE_CREATED":
         raise HTTPException(status_code=500, detail=result)
@@ -484,7 +489,14 @@ async def get_case_endpoint(case_id: str) -> dict[str, Any]:
 
 @app.delete("/cases/{case_id}")
 async def delete_case_endpoint(case_id: str) -> dict[str, Any]:
-    """Borra un caso con sus entidades, ledger y sesiones (limpieza del legajo)."""
+    """Borra un caso con sus entidades, ledger y sesiones (limpieza del legajo).
+
+    El permission gate lo deniega por defecto (regla `delete/case:*`): hace
+    falta un allow explícito vía `add_permission_rule`.
+    """
+    allowed, msg = _check_tool_permission("delete_case", f"case:{case_id}")
+    if not allowed:
+        raise HTTPException(status_code=403, detail=msg)
     if not db.delete_case(case_id):
         raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
     return {"status": "ok", "case_id": case_id}
@@ -508,6 +520,8 @@ async def call_tool_endpoint(tool_name: str, body: ToolCallRequest) -> dict[str,
         raw = await call_tool_validated(tool_name, body.arguments)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' no existe") from exc
+    except ToolPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:  # superficie de error controlada
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     bus.publish("tool.called", {"tool": tool_name, "arguments": body.arguments})

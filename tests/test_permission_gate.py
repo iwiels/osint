@@ -14,6 +14,8 @@ from specter.osint_core.permission_gate import (
     PermissionGate,
     PermissionRequest,
     PermissionRule,
+    _check_tool_permission,
+    tool_resource,
 )
 
 
@@ -480,6 +482,62 @@ class TestPermissionGateGlobalInstance:
         )
         assert permission_gate.evaluate("collect", "collector:virustotal") == PermissionEffect.ASK
         assert permission_gate.evaluate("delete", "case:123") == PermissionEffect.DENY
+
+
+class TestDirectCallGate:
+    """El gate de llamadas directas (registry/HTTP): deny por defecto."""
+
+    def test_tool_resource_deriva_borrado_y_resto(self) -> None:
+        assert tool_resource("delete_case", {"case_id": "case-1"}) == "case:case-1"
+        assert tool_resource("delete_case", {}) == "case:*"
+        assert tool_resource("investigate_domain", {"case_id": "case-1"}) == (
+            "tool:investigate_domain"
+        )
+        assert tool_resource("list_collectors", {}) == "tool:list_collectors"
+
+    def test_herramienta_segura_pasa(self) -> None:
+        allowed, msg = _check_tool_permission(
+            "list_collectors", tool_resource("list_collectors", {})
+        )
+        assert allowed is True
+        assert msg == ""
+
+    def test_herramienta_sensible_sin_regla_denegada(self) -> None:
+        allowed, msg = _check_tool_permission(
+            "investigate_domain", tool_resource("investigate_domain", {})
+        )
+        assert allowed is False
+        assert "PERMISSION_REQUIRED" in msg
+
+    def test_borrado_sin_allow_denegado(self) -> None:
+        allowed, msg = _check_tool_permission("delete_case", "case:case-1")
+        assert allowed is False
+        assert "PERMISSION_DENIED" in msg
+
+    def test_allow_exacto_gana_al_deny_generico(self) -> None:
+        """El allow explícito para un caso concreto abre el borrado de ese caso."""
+        from specter.osint_core.permission_gate import permission_gate
+
+        rule = permission_gate.add_rule(
+            PermissionRule(action="delete", resource="case:case-x", effect="allow")
+        )
+        try:
+            allowed, _ = _check_tool_permission("delete_case", "case:case-x")
+            assert allowed is True
+            # ... pero el resto de casos sigue denegado.
+            denied, _ = _check_tool_permission("delete_case", "case:case-y")
+            assert denied is False
+        finally:
+            permission_gate.remove_rule(rule.rule_id)
+
+    def test_exacta_gana_a_generica_en_evaluate(self) -> None:
+        """Semántica documentada: exacta > genérica; mismo nivel, primera gana."""
+        gate = PermissionGate()
+        gate.clear_rules()
+        gate.add_rule(PermissionRule(action="delete", resource="case:*", effect="deny"))
+        gate.add_rule(PermissionRule(action="delete", resource="case:x", effect="allow"))
+        assert gate.evaluate("delete", "case:x") == PermissionEffect.ALLOW
+        assert gate.evaluate("delete", "case:y") == PermissionEffect.DENY
 
 
 if __name__ == "__main__":

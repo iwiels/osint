@@ -174,6 +174,9 @@ from specter.osint_core.permission_gate import (
     PermissionRule,
 )
 from specter.osint_core.permission_gate import (
+    _check_tool_permission as _check_tool_permission,  # re-export: la política vive en el gate
+)
+from specter.osint_core.permission_gate import (
     permission_gate as default_permission_gate,
 )
 from specter.osint_core.timeline import CaseTimeline
@@ -2081,56 +2084,9 @@ def evaluate_permission(action: str, resource: str) -> str:
     )
 
 
-# Integración con el motor: verificar permisos antes de ejecutar
-# Las herramientas que ejecutan acciones sensibles deben verificar permisos
-
-
-def _check_tool_permission(tool_name: str, resource: str) -> tuple[bool, str]:
-    """
-    Verifica si una herramienta tiene permiso para ejecutarse.
-
-    Args:
-        tool_name: Nombre de la herramienta (ej: "run_collector")
-        resource: Recurso sobre el que actúa (ej: "collector:dns_zonexfer")
-
-    Returns:
-        Tupla (permitido, mensaje_error)
-    """
-    gate = _get_permission_gate()
-
-    # Mapear nombre de herramienta a acción
-    action_map = {
-        "run_collector": "collect",
-        "investigate_domain": "collect",
-        "investigate_ip": "collect",
-        "investigate_identity": "collect",
-        "investigate_person": "collect",
-        "investigate_email": "collect",
-        "analyze_file_metadata": "collect",
-        "hunt_office_docs": "collect",
-        "hunt_documents_and_leaks": "collect",
-        "deep_investigate_github": "collect",
-        "deep_research": "collect",
-        "enumerate_subdomains": "collect",
-        "link_entities": "correlate",
-        "correlate_cases": "correlate",
-        "run_correlations": "correlate",
-        "export_case_dossier": "export",
-        "export_case_stix": "export",
-    }
-
-    action = action_map.get(tool_name, "collect")
-    allowed, request = gate.check(action, resource)
-
-    if allowed:
-        return True, ""
-
-    if request is not None:
-        # Emitir evento de solicitud de permiso
-        gate.emit_permission_request(request)
-        return False, f"PERMISSION_REQUIRED: {request.message}"
-
-    return False, f"PERMISSION_DENIED: {action} sobre {resource} no está permitido"
+# Integración con el motor: verificar permisos antes de ejecutar.
+# `_check_tool_permission` vive ahora en el permission gate (fuente única de
+# la política) y se re-exporta desde los imports de arriba.
 
 
 # Listener para eventos de permiso: registra en el ledger

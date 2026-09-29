@@ -230,3 +230,19 @@ async def test_run_collector_usa_un_colector_real_del_kernel(engine_env: Path, m
     assert result["collector"] == "ip_enricher"
     assert result["entities_found"] == 2  # IP + PTR
     assert len(specter_server.db.get_case_ledger(case_id)) == 2
+
+
+async def test_call_tool_validated_deniega_sensible_sin_regla(engine_env: Path):
+    """La vía directa falla cerrado: sensible sin allow → ToolPermissionDenied."""
+    from engine.registry import ToolPermissionDenied
+
+    with pytest.raises(ToolPermissionDenied, match="PERMISSION_REQUIRED"):
+        await call_tool_validated(
+            "investigate_domain", {"case_id": "case-x", "target": "x.test"}
+        )
+
+
+async def test_call_tool_validated_segura_pasa(engine_env: Path):
+    """La vía directa deja pasar tools SAFE sin regla explícita."""
+    payload = json.loads(await call_tool_validated("list_collectors", {}))
+    assert "collectors" in payload

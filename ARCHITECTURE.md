@@ -46,8 +46,15 @@
 4. **Event bus tipado.** Todo lo que pasa en el motor se publica como evento
    (`agent.*`, `tool.*`, `permission.*`, `case.*`) y se consume por SSE. La UI es una
    proyección del estado del motor.
-5. **Permission gate.** El agente no ejecuta herramientas sensibles sin aprobación
-   explícita del analista (`Permission.ask`), igual que el gate de bash de opencode.
+5. **Permission gate (dos capas).** El agente no ejecuta herramientas sensibles
+   sin aprobación explícita del analista (`Permission.ask`), igual que el gate
+   de bash de opencode. Además, las llamadas **directas** a la API
+   (`POST /tools/{name}/call`, `POST /cases`, `DELETE /cases/{id}`) pasan por
+   el gate del servidor (`call_tool_validated` → `_check_tool_permission`):
+   fail-closed — lo no contemplado por una regla allow se deniega (403), el
+   borrado de casos está denegado por defecto salvo allow explícito, y las
+   reglas exactas preceden a las genéricas. La clasificación SAFE/SENSITIVE
+   vive en `permission_gate.py` como fuente única para ambas capas.
 6. **Provider-agnostic.** Anthropic, OpenAI y cualquier endpoint OpenAI-compatible
    (Ollama, LM Studio, vLLM) sin dependencias de SDK: HTTP + JSON puro.
 
