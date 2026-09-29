@@ -244,10 +244,10 @@ describe("WraithClient", () => {
     expect(fetchImpl.mock.calls[0][0]).toBe("http://127.0.0.1:8787/agent/sessions/sess-9");
     expect(fetchImpl.mock.calls[0][1].method).toBe("DELETE");
 
-    await client.cancelRuns("case-1");
+    await client.cancelRuns("case-1", "run-7");
     const [url, init] = fetchImpl.mock.calls[1];
     expect(url).toBe("http://127.0.0.1:8787/agent/runs/cancel");
-    expect(JSON.parse(init.body as string)).toEqual({ session_id: "case-1" });
+    expect(JSON.parse(init.body as string)).toEqual({ session_id: "case-1", run_id: "run-7" });
   });
 
   it("deleteCase pega al endpoint de borrado en cascada", async () => {

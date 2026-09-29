@@ -158,6 +158,12 @@ export default function App() {
                 },
                 "question.asked": (payload) =>
                   useStore.getState().setPendingQuestion(payload as never),
+                // El run arrancó: guardamos su run_id para poder detenerlo con
+                // precisión (session_id sólo acierta si el run tiene caso).
+                "agent.started": (payload) => {
+                  const p = payload as { run_id?: string };
+                  useStore.getState().setActiveRunId(p.run_id ?? null);
+                },
                 "tool.started": (payload) => {
                   const p = payload as { call_id?: string; tool: string; arguments?: unknown };
                   useStore.getState().startToolCall(p.call_id ?? "", p.tool, p.arguments);
@@ -205,6 +211,7 @@ export default function App() {
                   useStore.getState().setUsage(p.usage ?? null);
                   useStore.getState().clearPermissions();
                   useStore.getState().setPendingQuestion(null);
+                  useStore.getState().setActiveRunId(null);
                   useStore.getState().bumpCaseData();
                   useStore.getState().bumpSessions();
                 },

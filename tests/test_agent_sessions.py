@@ -263,3 +263,74 @@ async def test_run_agent_reutiliza_session_id_multi_turn(tmp_path, monkeypatch) 
     contents = [m["content"] for m in second_llm_messages]
     assert "primer prompt" in contents
     assert "segundo prompt" in contents
+
+
+def test_mensajes_con_limite_conserva_los_mas_recientes(tmp_path) -> None:
+    """El límite debe cortar por el FINAL, no por el principio.
+
+    Con `ORDER BY seq ASC LIMIT n` se quedaban los n mensajes MÁS ANTIGUOS: el
+    agente reconstruía su contexto con la cola vieja de la conversación y en
+    sesiones largas olvidaba todo lo reciente.
+    """
+    db = Database(tmp_path / "s.db")
+    _session(db)
+    for i in range(57):
+        db.append_agent_message("sess-1", "user", f"turno {i}")
+
+    msgs = db.get_agent_session_messages("sess-1", limit=50)
+    assert len(msgs) == 50
+    # Sigue en orden cronológico (ASC), pero cortado por el final: 60 totales,
+    # se quedan los 50 últimos (seq 10..59), no los primeros (seq 0..49).
+    assert [m.seq for m in msgs] == sorted(m.seq for m in msgs)
+    assert msgs[0].seq == 10
+    assert msgs[-1].seq == 59
+
+
+async def test_cancel_pendiente_no_auto_cancela_el_siguiente_run(
+    tmp_path, monkeypatch
+) -> None:
+    """Una cancel huérfana de un run anterior no puede detener el siguiente.
+
+    `run_id == session_id`: si el Detener llegaba cuando el run ya había
+    terminado, la marca quedaba en `_cancel_requests` y el PRIMER turno del
+    siguiente run de esa sesión se detenía a sí mismo nada más empezar.
+    """
+    reset_services(str(tmp_path / "stale-cancel.db"))
+    captured: list[dict] = []
+
+    def mock_handler(req: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(req.content.decode("utf-8")))
+        return httpx.Response(
+            status_code=200,
+            json={"choices": [{"message": {"role": "assistant", "content": "Respuesta viva"}}]},
+            request=req,
+        )
+
+    router = MockRouter().add_responder("POST", r"fake\.llm", mock_handler)
+    patch_httpx(monkeypatch, router)
+
+    async def emit(kind: str, payload: dict) -> None:
+        return None
+
+    sess = "sess-stale-cancel"
+    agent_module._cancel_requests.add(sess)  # residuo de un run que ya murió
+    try:
+        res = await agent_module.run_agent(
+            message="hola de nuevo",
+            case_id="case-1",
+            provider="ollama",
+            model=None,
+            api_key=None,
+            base_url=LLM_BASE,
+            max_iterations=2,
+            emit=emit,
+            stream=False,
+            plan_first=False,
+            session_id=sess,
+        )
+        assert res["status"] == "COMPLETED"
+        assert res["final_message"] == "Respuesta viva"
+        assert len(captured) == 1  # sí llegó al LLM: no se autocanceló
+        assert sess not in agent_module._cancel_requests
+    finally:
+        agent_module._cancel_requests.discard(sess)

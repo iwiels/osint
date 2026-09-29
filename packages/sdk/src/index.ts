@@ -189,8 +189,11 @@ export class WraithClient {
   }
 
   /** Detiene runs en vuelo (botón Detener). Cooperativo: el loop lo observa. */
-  cancelRuns(sessionId?: string): Promise<{ status: string; cancelled: number }> {
-    return this.request("POST", "/agent/runs/cancel", { session_id: sessionId ?? null });
+  cancelRuns(sessionId?: string, runId?: string): Promise<{ status: string; cancelled: number }> {
+    return this.request("POST", "/agent/runs/cancel", {
+      session_id: sessionId ?? null,
+      run_id: runId ?? null,
+    });
   }
 
   // --- Bóveda de API keys (Fase B: las fuentes con key solo viven si están aquí) ---

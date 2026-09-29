@@ -151,23 +151,44 @@ def respond_permission(request_id: str, decision: str) -> bool:
 
 
 # Runs en vuelo (botón Detener de la UI): cancelación cooperativa.
-_active_runs: dict[str, str] = {}  # run_id -> session_id
+_active_runs: dict[str, str] = {}  # run_id -> ámbito del permiso (case_id | "global")
 _cancel_requests: set[str] = set()  # run_id con stop pedido
 
 
-def request_run_cancel(session_id: str | None = None) -> int:
-    """Pide la detención de runs activos (todos, o los de una sesión).
+def request_run_cancel(session_id: str | None = None, run_id: str | None = None) -> int:
+    """Pide la detención de runs activos: todos, los de un ámbito o uno concreto.
 
-    Cooperativa: el loop la observa entre iteraciones y las esperas de
-    permiso pendientes se resuelven como denegadas para no colgar el run.
-    Devuelve cuántos runs marcó.
+    Cooperativa: el loop la observa entre iteraciones y las esperas de permiso
+    y de pregunta pendientes se resuelven para no colgar el run. Devuelve
+    cuántos runs marcó.
+
+    `run_id` es el ancla exacta (la UI lo saca de `agent.started`). `session_id`
+    acepta tanto el id de sesión (== run_id) como el ámbito del permiso
+    (case_id o "global"), que es lo que venía enviando la UI.
     """
-    targets = [rid for rid, sid in _active_runs.items() if session_id in (None, sid)]
+
+    def matches(rid: str, scope: str) -> bool:
+        if run_id is not None:
+            return rid == run_id
+        if session_id is None:
+            return True
+        return session_id in (rid, scope)
+
+    targets = [rid for rid, scope in _active_runs.items() if matches(rid, scope)]
     for rid in targets:
         _cancel_requests.add(rid)
+
+    # Ámbitos (case_id/global) de los runs marcados: las esperas de permiso y
+    # de pregunta se registran con el ámbito, no con el run_id, así que se
+    # resuelven cruzando por aquí. Sin filtro, se resuelve todo (compat).
+    scopes = {_active_runs[rid] for rid in targets}
+    if session_id is not None:
+        scopes.add(session_id)
+    cancel_all = session_id is None and run_id is None
+
     for req in list(_pending_permissions.values()):
         if (
-            (session_id is None or req.session_id == session_id)
+            (cancel_all or req.session_id in scopes)
             and req.status == "pending"
             and req.future is not None
             and not req.future.done()
@@ -175,6 +196,18 @@ def request_run_cancel(session_id: str | None = None) -> int:
             req.status = "denied"
             req.decision = "deny"
             req.future.set_result("denied")
+    # Sin esto, una pregunta pendiente dejaba el run colgado esperando 300s
+    # tras el Detener, y la UI seguía mostrando el diálogo de una pregunta
+    # cuya respuesta ya nadie iba a leer.
+    for req in list(_pending_questions.values()):
+        if (
+            (cancel_all or req.session_id in scopes)
+            and req.status == "pending"
+            and req.future is not None
+            and not req.future.done()
+        ):
+            req.status = "unanswered"
+            req.future.set_result("unanswered")
     return len(targets)
 
 
@@ -352,6 +385,19 @@ async def _ask_analyst(arguments: dict[str, Any], session_id: str, emit: EmitFn)
             }
         )
     _pending_questions.pop(req.request_id, None)
+    if req.status != "answered":
+        # Detener del run: request_run_cancel resolvió la espera como
+        # "unanswered" y no hay respuestas. Devolver ANSWERED con lista vacía
+        # haría creer al modelo que el analista respondió "nada".
+        return json.dumps(
+            {
+                "status": "UNANSWERED",
+                "error": (
+                    "Pregunta cancelada por una detención del run: continúa con "
+                    "lo que tengas o vuelve a preguntarla más tarde."
+                ),
+            }
+        )
     return json.dumps(
         {
             "status": "ANSWERED",
@@ -993,6 +1039,13 @@ async def run_agent(
 
     # El run queda registrado desde el primer mensaje (historial + timeline).
     run_id = session_id or f"sess-{datetime.now(UTC):%Y%m%d}-{uuid.uuid4().hex[:6]}"
+    # El run se registra ANTES de `agent.started`: si el analista pulsa
+    # Detener al ver el primer evento, la petición ya encuentra el run (antes
+    # se registraba tras el planificador y ese primer Stop se perdía).
+    _active_runs[run_id] = perm_scope
+    # Una cancel huérfana de un run previo con el mismo id (run_id ==
+    # session_id) no debe auto-cancelar este run en su primera iteración.
+    _cancel_requests.discard(run_id)
     _history_create(run_id, case_id, cfg.name, model_id, raw_prompt)
     _history_append(run_id, "user", raw_prompt)
 
@@ -1002,6 +1055,9 @@ async def run_agent(
             "provider": cfg.name,
             "model": model_id,
             "case_id": case_id,
+            # Ancla exacta del botón Detener: la UI la guarda y la devuelve en
+            # /agent/runs/cancel (session_id sólo acierta si el run tiene caso).
+            "run_id": run_id,
             "streaming": use_stream,
             "max_iterations": max_iterations,
         },
@@ -1020,6 +1076,8 @@ async def run_agent(
                 plan = await _emit_plan(client, cfg, model_id, message, emit)
             except Exception:
                 _history_finish(run_id, "error", 0, 0, usage, "falló el planificador")
+                _active_runs.pop(run_id, None)
+                _cancel_requests.discard(run_id)
                 raise
             if plan:
                 note = _plan_note(plan)
@@ -1052,23 +1110,30 @@ async def run_agent(
 
         # Historial de calls para el guard anti-bucle (vive entre turnos).
         recent_calls: list[tuple[str, str]] = []
-        _active_runs[run_id] = perm_scope
         cancelled = False
+
+        # Bloque de detención compartido por los dos puntos de comprobación
+        # (inicio de iteración y previo a lanzar las tools del turno).
+        async def _stop_run() -> None:
+            nonlocal cancelled
+            _cancel_requests.discard(run_id)
+            cancelled = True
+            stopped = "Run detenido por el analista."
+            messages.append({"role": "assistant", "content": stopped})
+            _history_append(run_id, "assistant", stopped)
+            await emit("agent.message", {"role": "assistant", "content": stopped})
+
         while iterations < max_iterations:
             iterations += 1
 
             if run_id in _cancel_requests:
-                _cancel_requests.discard(run_id)
-                cancelled = True
-                stopped = "Run detenido por el analista."
-                messages.append({"role": "assistant", "content": stopped})
-                _history_append(run_id, "assistant", stopped)
-                await emit("agent.message", {"role": "assistant", "content": stopped})
+                await _stop_run()
                 break
             try:
                 assistant_msg, tool_calls = await _call_step_with_retry(emit, do_step)
             except Exception:
                 _active_runs.pop(run_id, None)
+                _cancel_requests.discard(run_id)
                 _history_finish(
                     run_id,
                     "error",
@@ -1141,6 +1206,12 @@ async def run_agent(
                 )
                 return {"call_id": call["id"], "tool": call["name"], "result": result}
 
+            # El Stop llegó mientras el modelo hablaba: las tools de este turno
+            # no se lanzan (evita recolecciones/red tras la detención).
+            if run_id in _cancel_requests:
+                await _stop_run()
+                break
+
             # Los tool calls del mismo turno son independientes entre sí: se
             # ejecutan en paralelo y luego se devuelven al modelo en orden.
             batch = await asyncio.gather(*(run_call(call) for call in tool_calls))
@@ -1194,6 +1265,9 @@ async def run_agent(
     )
 
     _active_runs.pop(run_id, None)
+    # El run terminó: una cancelación llegada tarde no queda huérfana
+    # (run_id == session_id: un residuo auto-cancelaría el siguiente run).
+    _cancel_requests.discard(run_id)
     final_text = next(
         (
             m.get("content")
