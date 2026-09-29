@@ -103,9 +103,28 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
 - Corregidas las cifras de la documentación: 47 herramientas MCP (no 40 ni 41),
   584 tests (no 265+), 70 ficheros de test (no 37) y rutas de datos coherentes
   con las que usa el motor.
+- **La UI y el motor mostraban la versión 0.2.0** en un build 0.3.0 (`/health`, el
+  `info.version` del OpenAPI y tres literales en el renderer). La UI toma ahora la
+  versión de `desktop/package.json` en tiempo de build, y un test comprueba que
+  `pyproject.toml`, el motor y los tres `package.json` declaran la misma versión.
+- **El workflow de release nunca había llegado a compilar un instalador.** Solo se
+  ejecutó una vez, con el tag `v0.3.0`, y los cuatro jobs del motor fallaron en
+  `pip install`; el tag se empujó antes de fijar `maigret==0.1.7`. Además, el
+  paquete `.deb` exige el email del mantenedor y `desktop/package.json` no tenía
+  `author` ni `homepage`.
+- **La CI no instalaba `pytest-asyncio`**: todos los tests `async` fallaban y la
+  cobertura caía al 42 %. Ahora se instala en CI y en la guía de contribución, y
+  `pyproject.toml` lo declara en `required_plugins` para abortar con un mensaje
+  claro si falta.
 
 ### Añadido
 
+- Smoke test del binario del motor (`scripts/smoke_engine_binary.py`) en el release,
+  justo después de PyInstaller y en cada plataforma: arranca el ejecutable y
+  comprueba `/health`, que la autenticación se exige y que puede crear un caso con
+  ledger firmado. Un motor roto ya no llega a un instalador.
+- Icono de la aplicación (`desktop/build/icon.png`) y notas de release propias
+  (`.github/release-notes.md`) con descargas, primer arranque y uso responsable.
 - `LICENSE` (MIT), `.env.example` documentando todas las variables del motor,
   `CHANGELOG.md` y `CODE_OF_CONDUCT.md`.
 - Configuración de Dependabot para npm, pip, uv y GitHub Actions, con agrupación
