@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SpecterClient, SpecterError } from "./index";
+import { WraithClient, WraithError } from "./index";
 
 function makeClient(jsonResponse: unknown, status = 200) {
   // mockImplementation (no mockResolvedValue): cada llamada necesita una
@@ -10,11 +10,11 @@ function makeClient(jsonResponse: unknown, status = 200) {
       headers: { "Content-Type": "application/json" },
     }),
   );
-  const client = new SpecterClient({ baseUrl: "http://127.0.0.1:8787/", fetchImpl });
+  const client = new WraithClient({ baseUrl: "http://127.0.0.1:8787/", fetchImpl });
   return { client, fetchImpl };
 }
 
-describe("SpecterClient", () => {
+describe("WraithClient", () => {
   it("normaliza la baseUrl y hace health()", async () => {
     const { client, fetchImpl } = makeClient({ status: "ok", engine: "specter", version: "0.2.0", mcp_tools: 15, data_dir: "", reports_dir: "" });
     const health = await client.health();
@@ -33,9 +33,9 @@ describe("SpecterClient", () => {
     expect(JSON.parse(init.body as string)).toEqual({ name: "Test", description: "d" });
   });
 
-  it("mapea errores HTTP a SpecterError", async () => {
+  it("mapea errores HTTP a WraithError", async () => {
     const { client } = makeClient({ detail: "Caso no existe" }, 404);
-    await expect(client.caseGraph("nope")).rejects.toBeInstanceOf(SpecterError);
+    await expect(client.caseGraph("nope")).rejects.toBeInstanceOf(WraithError);
   });
 
   it("caseLedger devuelve bloques tipados y estado de sellado", async () => {
@@ -209,13 +209,15 @@ describe("SpecterClient", () => {
     });
   });
 
-  it("propaga errores HTTP con body de texto plano como SpecterError", async () => {
+  it("propaga errores HTTP con body de texto plano como WraithError", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response("Internal Server Error", { status: 500 }),
     );
-    const client = new SpecterClient({ baseUrl: "http://127.0.0.1:8787", fetchImpl });
-    const err = await client.callTool("investigate_domain", {}).catch((e) => e);
-    expect(err).toBeInstanceOf(SpecterError);
+    const client = new WraithClient({ baseUrl: "http://127.0.0.1:8787", fetchImpl });
+    const err = (await client
+      .callTool("investigate_domain", {})
+      .catch((e: unknown) => e)) as WraithError;
+    expect(err).toBeInstanceOf(WraithError);
     expect(err.status).toBe(500);
     expect(err.message).toContain("Internal Server Error");
   });
@@ -224,7 +226,7 @@ describe("SpecterClient", () => {
     const fetchImpl = vi.fn().mockImplementation(async () =>
       new Response(JSON.stringify({ status: "COMPLETED" }), { status: 200 }),
     );
-    const client = new SpecterClient({
+    const client = new WraithClient({
       baseUrl: "http://127.0.0.1:8787",
       fetchImpl,
       defaultHeaders: { Authorization: "Bearer tok" },
@@ -276,7 +278,7 @@ describe("SpecterClient", () => {
   });
 });
 
-function makeRespond(client: SpecterClient, fetchImpl: ReturnType<typeof vi.fn>) {
+function makeRespond(client: WraithClient, fetchImpl: ReturnType<typeof vi.fn>) {
   fetchImpl.mockResolvedValueOnce(
     new Response(JSON.stringify({ status: "ok", decision: "allow_session" }), { status: 200 }),
   );

@@ -29,9 +29,9 @@ export function GraphNodeDetail({
 
     const desktop = (
       window as unknown as {
-        specterDesktop?: { openExternal?: (u: string) => Promise<boolean> };
+        wraithDesktop?: { openExternal?: (u: string) => Promise<boolean> };
       }
-    ).specterDesktop;
+    ).wraithDesktop;
 
     if (desktop?.openExternal) {
       void desktop.openExternal(url);

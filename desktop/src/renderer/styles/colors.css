@@ -1,5 +1,5 @@
 /* ============================================================
-   SpecterOSINT — Colores
+   WraithOSINT — Colores
    ------------------------------------------------------------
    Estructura portada de opencode (packages/ui/src/styles/colors.css):
      1) escala primitiva (grises 1-12 + alfas de overlay)
@@ -15,7 +15,7 @@
 /* ---- 1. Primitivas ------------------------------------------------ */
 
 :root {
-  /* Gris oscuro (neutro frío: carbón azulado de Specter, sin tinte) */
+  /* Gris oscuro (neutro frío: carbón azulado de Wraith, sin tinte) */
   --gray-dark-1: #0c0e12;
   --gray-dark-2: #12151a;
   --gray-dark-3: #181c22;

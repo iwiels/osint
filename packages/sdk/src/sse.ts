@@ -6,7 +6,7 @@
  * `agent.tools_parallel` (lote de tools) y `agent.stream_fallback` (provider sin SSE).
  */
 
-export type SpecterEventType =
+export type WraithEventType =
   | "agent.started"
   | "agent.message"
   | "agent.token"
@@ -19,13 +19,14 @@ export type SpecterEventType =
   | "tool.completed"
   | "permission.request"
   | "permission.granted"
+  | "permission.timeout"
   | "question.asked"
   | "case.created"
   | "tool.called";
 
-export interface SpecterEvent<T = unknown> {
+export interface WraithEvent<T = unknown> {
   seq: number;
-  type: SpecterEventType;
+  type: WraithEventType;
   payload: T;
   ts: string;
 }
@@ -119,7 +120,7 @@ export interface AgentCompletedPayload {
 }
 
 export type EventHandlers = {
-  [K in SpecterEventType]?: (payload: unknown, event: SpecterEvent) => void;
+  [K in WraithEventType]?: (payload: unknown, event: WraithEvent) => void;
 };
 
 export function connectEvents(
@@ -135,20 +136,20 @@ export function connectEvents(
     : `${baseUrl.replace(/\/$/, "")}/events`;
   const source = new EventSource(url);
 
-  const listenerFor = (type: SpecterEventType) => (evt: Event) => {
+  const listenerFor = (type: WraithEventType) => (evt: Event) => {
     const raw = evt as MessageEvent;
     const handler = handlers[type];
     if (!handler) return;
     try {
-      const parsed = JSON.parse(raw.data) as SpecterEvent;
+      const parsed = JSON.parse(raw.data) as WraithEvent;
       handler(parsed.payload, parsed);
     } catch {
       // evento malformado: ignorar silenciosamente
     }
   };
 
-  const bound: Array<[SpecterEventType, EventListener]> = [];
-  const types = Object.keys(handlers) as SpecterEventType[];
+  const bound: Array<[WraithEventType, EventListener]> = [];
+  const types = Object.keys(handlers) as WraithEventType[];
   for (const type of types) {
     const listener = listenerFor(type);
     source.addEventListener(type, listener);

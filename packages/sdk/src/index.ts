@@ -1,9 +1,9 @@
 /**
- * @specter/sdk - Cliente tipado del motor forense Specter.
+ * @wraith/sdk - Cliente tipado del motor forense Wraith.
  * Uso:
- *   const specter = new SpecterClient({ baseUrl: "http://127.0.0.1:8787" });
- *   await specter.health();
- *   await specter.createCase({ name: "...", description: "..." });
+ *   const wraith = new WraithClient({ baseUrl: "http://127.0.0.1:8787" });
+ *   await wraith.health();
+ *   await wraith.createCase({ name: "...", description: "..." });
  */
 
 import {
@@ -24,29 +24,29 @@ import {
 export * from "./types";
 export * from "./sse";
 
-export interface SpecterClientOptions {
+export interface WraithClientOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
   defaultHeaders?: Record<string, string>;
 }
 
-export class SpecterError extends Error {
+export class WraithError extends Error {
   constructor(
     public status: number,
     public endpoint: string,
     message: string,
   ) {
     super(`[${status}] ${endpoint}: ${message}`);
-    this.name = "SpecterError";
+    this.name = "WraithError";
   }
 }
 
-export class SpecterClient {
+export class WraithClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly defaultHeaders: Record<string, string>;
 
-  constructor(options: SpecterClientOptions) {
+  constructor(options: WraithClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     // `bind(globalThis)`: invocado como método de la clase, `fetch` pierde su
     // receptor (`window`) y Chromium lanza "Illegal invocation".
@@ -67,7 +67,7 @@ export class SpecterClient {
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => res.statusText);
-      throw new SpecterError(res.status, path, detail);
+      throw new WraithError(res.status, path, detail);
       }
     return (await res.json()) as T;
   }

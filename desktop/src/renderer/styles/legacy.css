@@ -1,5 +1,5 @@
 /* ============================================================
-   SpecterOSINT — Puente de compatibilidad
+   WraithOSINT — Puente de compatibilidad
    ------------------------------------------------------------
    Estas clases existían en el antiguo theme.css y las usan App, Sidebar,
    AgentConsole, CaseView y DockPrompt. Aquí se reimplementan sobre los

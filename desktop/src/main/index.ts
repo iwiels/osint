@@ -1,5 +1,5 @@
 /**
- * Specter Desktop - Main Process
+ * Wraith Desktop - Main Process
  *  - Ventana BrowserWindow con preload sandboxed (contextIsolation on)
  *  - Ciclo de vida de la app
  *  - Spawn + health-check del sidecar del engine (Python HTTP)
@@ -21,15 +21,15 @@ let engineToken = "";
 function reportsDir(): string {
   if (!app.isPackaged) return path.resolve(__dirname, "../../..", "reports");
   const base = process.env.APPDATA || path.dirname(process.execPath);
-  return path.join(base, "specter-osint", "reports");
+  return path.join(base, "wraith-osint", "reports");
 }
 
 const isDev = !app.isPackaged;
 
 // Forense de crashes: sin esto, un 0xC0000005 del proceso principal muere sin
 // dejar rastro (ni WER ni dump). Con dumpDir, Chromium escribe un .dmp en
-// %APPDATA%/specter-desktop/crash-dumps y el dump nombra el módulo exacto.
-app.setPath("crashDumps", path.join(app.getPath("appData"), "specter-desktop", "crash-dumps"));
+// %APPDATA%/wraith-desktop/crash-dumps y el dump nombra el módulo exacto.
+app.setPath("crashDumps", path.join(app.getPath("appData"), "wraith-desktop", "crash-dumps"));
 try {
   fs.mkdirSync(app.getPath("crashDumps"), { recursive: true });
 } catch {
@@ -42,7 +42,7 @@ try {
     submitURL: "",
   });
 } catch (err) {
-  console.warn("[specter] crashReporter no disponible:", err);
+  console.warn("[wraith] crashReporter no disponible:", err);
 }
 
 // Desactivar bloqueo de redes privadas en Chromium para comunicación dev local
@@ -57,7 +57,7 @@ function createWindow(): void {
     minHeight: 680,
     backgroundColor: "#0b0e14",
     show: false,
-    title: "SpecterOSINT",
+    title: "WraithOSINT",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
@@ -185,9 +185,11 @@ function createWindow(): void {
     }
   });
 
-  // Reenviar consola del renderer a la terminal del proceso principal
+  // Reenviar consola del renderer a la terminal del proceso principal.
+  // `level` es un entero 0-3 (verbose, info, warning, error), no un ID de renderer.
+  const levelName = ["verbose", "info", "warning", "error"];
   mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
-    console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
+    console.log(`[renderer][${levelName[level] ?? level}] ${message} (${sourceId}:${line})`);
   });
 
   mainWindow.once("ready-to-show", () => {
@@ -249,7 +251,7 @@ function createWindow(): void {
 }
 
 // IPC: revelar un dossier en el explorador de archivos (A5: confinado a reports/).
-ipcMain.handle("specter:reveal", async (_evt, fsPath: string) => {
+ipcMain.handle("wraith:reveal", async (_evt, fsPath: string) => {
   try {
     const root = path.resolve(reportsDir());
     const target = path.resolve(String(fsPath ?? ""));
@@ -265,10 +267,10 @@ ipcMain.handle("specter:reveal", async (_evt, fsPath: string) => {
 });
 
 // IPC: token Bearer del engine para el renderer (C1: nunca va en la URL).
-ipcMain.handle("specter:engine-token", async () => engineToken);
+ipcMain.handle("wraith:engine-token", async () => engineToken);
 
 // IPC: verificación directa de salud desde Node.js (inmune a CORS del navegador)
-ipcMain.handle("specter:check-health", async () => {
+ipcMain.handle("wraith:check-health", async () => {
   try {
     const res = await fetch(`${engineBaseUrl}/health`);
     if (!res.ok) return null;
@@ -279,13 +281,13 @@ ipcMain.handle("specter:check-health", async () => {
 });
 
 // IPC: abrir enlaces y páginas web en el navegador predeterminado del sistema operativo
-ipcMain.handle("specter:open-external", async (_evt, url: string) => {
+ipcMain.handle("wraith:open-external", async (_evt, url: string) => {
   if (url && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("mailto:"))) {
     try {
       await shell.openExternal(url);
       return true;
     } catch (err) {
-      console.error("[specter] fallo al abrir url externa:", err);
+      console.error("[wraith] fallo al abrir url externa:", err);
       return false;
     }
   }
@@ -296,7 +298,7 @@ app.whenReady().then(async () => {
   // Sin inyección de Allow-Private-Network: el engine ya no participa en PNA
   // (M1) y el renderer lleva el switch de Chromium que desactiva esos
   // preflights en su lado. Inyectar el header aquí solo ampliaba superficie.
-  // El navegador sigiloso vive en el engine Python (specter.stealth_browser,
+  // El navegador sigiloso vive en el engine Python (wraith.stealth_browser,
   // Playwright): fuera del proceso main de Electron. Un crash del subsistema de
   // navegador ya no puede tumbar la app (causa raíz de los 0xC0000005 previos).
   sidecar = new EngineSidecar(isDev);
@@ -304,9 +306,9 @@ app.whenReady().then(async () => {
     const info = await sidecar.start();
     engineBaseUrl = info.baseUrl;
     engineToken = info.token;
-    console.log("[specter] engine listo:", { ...info, token: "<redactado>" });
+    console.log("[wraith] engine listo:", { ...info, token: "<redactado>" });
   } catch (err) {
-    console.error("[specter] engine no disponible, la UI mostrara banner offline:", err);
+    console.error("[wraith] engine no disponible, la UI mostrara banner offline:", err);
   }
 
   createWindow();
@@ -322,7 +324,7 @@ let isQuitting = false;
 // utility) queda registrado en la terminal principal con su motivo.
 app.on("child-process-gone", (_event, details) => {
   console.warn(
-    `[specter] Proceso ${details.type} terminado (${details.reason}` +
+    `[wraith] Proceso ${details.type} terminado (${details.reason}` +
       `${details.exitCode ? `, exit ${details.exitCode}` : ""}), continuando...`,
   );
 });

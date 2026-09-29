@@ -10,8 +10,9 @@ import type {
   AnalystQuestion,
   PermissionRequestPayload,
   QuestionAskedPayload,
-  SpecterClient,
-} from "@specter/sdk";
+  WraithClient,
+} from "@wraith/sdk";
+import { WraithError } from "@wraith/sdk";
 import { useStore } from "../store";
 import { Button } from "../ui/button";
 import { TextField } from "../ui/text-field";
@@ -112,11 +113,13 @@ export function SessionPermissionDock({
   onDecide,
 }: {
   request: PermissionRequestPayload;
-  client: SpecterClient;
+  client: WraithClient;
   onDecide?: (decision: "allow" | "allow_session" | "deny") => void;
 }) {
   const [responding, setResponding] = useState(false);
-  const clear = useStore((s) => s.setPendingPermission);
+  const [failure, setFailure] = useState<string | null>(null);
+  const resolve = useStore((s) => s.resolvePermission);
+  const queued = useStore((s) => s.permissionQueue.length);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -126,13 +129,23 @@ export function SessionPermissionDock({
   const handleDecide = async (decision: "allow" | "allow_session" | "deny") => {
     if (responding) return;
     setResponding(true);
+    setFailure(null);
     try {
       await client.agentPermissionRespond(request.request_id, decision);
-      clear(null);
+      resolve(request.request_id);
       onDecide?.(decision);
     } catch (err) {
-      console.error("[specter] error respondiendo permiso:", err);
-      clear(null);
+      const status = err instanceof WraithError ? err.status : 0;
+      if (status === 404) {
+        // El motor ya resolvió o caducó esta petición: retira el diálogo
+        // obsoleto en vez de dejarlo en pantalla (responderlo daría 404).
+        resolve(request.request_id);
+      } else {
+        // Fallo de red u otro: conserva el diálogo para que el analista pueda
+        // reintentar (antes se ocultaba y el clic parecía haber funcionado).
+        console.error("[wraith] error respondiendo permiso:", err);
+        setFailure(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setResponding(false);
     }
@@ -180,6 +193,11 @@ export function SessionPermissionDock({
               </span>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {queued > 1 && (
+                <Tag tone="brand" className="font-mono text-[11px] font-semibold shrink-0">
+                  {queued} en cola
+                </Tag>
+              )}
               <Tag tone="warning" className="font-mono text-[11px] font-semibold shrink-0">
                 {request.tool}
               </Tag>
@@ -239,6 +257,16 @@ export function SessionPermissionDock({
           <div data-slot="permission-hint" className="leading-snug text-text-base">
             El agente solicita autorización para invocar la herramienta con los parámetros:
           </div>
+          {failure && (
+            <div
+              data-slot="permission-error"
+              role="alert"
+              className="rounded-md border border-border-critical-base bg-surface-critical-weak p-2 font-mono text-[11px] leading-snug text-text-critical"
+            >
+              No se pudo enviar la respuesta al motor: {failure}. Vuelve a pulsar un botón para
+              reintentar.
+            </div>
+          )}
           {hasArgs ? (
             <pre
               data-slot="permission-patterns"
@@ -267,7 +295,7 @@ export function SessionQuestionDock({
   onSubmit,
 }: {
   request: QuestionAskedPayload;
-  client: SpecterClient;
+  client: WraithClient;
   onSubmit?: () => void;
 }) {
   const clear = useStore((s) => s.setPendingQuestion);
@@ -310,7 +338,7 @@ export function SessionQuestionDock({
       clear(null);
       onSubmit?.();
     } catch (err) {
-      console.error("[specter] error respondiendo preguntas:", err);
+      console.error("[wraith] error respondiendo preguntas:", err);
       clear(null);
     } finally {
       setResponding(false);

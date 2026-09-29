@@ -1,6 +1,6 @@
 /**
- * Tipos del dominio forense Specter.
- * Espejo tipado de los modelos Pydantic del engine (specter.osint_core.models).
+ * Tipos del dominio forense Wraith.
+ * Espejo tipado de los modelos Pydantic del engine (wraith.osint_core.models).
  */
 
 export type EntityType =
@@ -245,7 +245,7 @@ export interface CaseCreated {
 
 export interface EngineHealth {
   status: "ok";
-  engine: "specter";
+  engine: "wraith";
   version: string;
   mcp_tools: number;
   data_dir: string;

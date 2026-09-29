@@ -7,10 +7,14 @@
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
+    // Los tests corren con el runner nativo de Node (`node --test`), que
+    // ejecuta TypeScript por type-stripping y NO resuelve extensiones: el
+    // import debe llevar el `.ts` explícito. Válido porque `noEmit` está activo.
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "@specter/sdk": ["../packages/sdk/src/index.ts"]
+      "@wraith/sdk": ["../packages/sdk/src/index.ts"]
     }
   },
   "include": [

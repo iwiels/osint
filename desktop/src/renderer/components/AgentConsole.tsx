@@ -1,5 +1,5 @@
 /**
- * AgentConsole - chat con el agente investigador forense Specter.
+ * AgentConsole - chat con el agente investigador forense Wraith.
  * Muestra transcripción en vivo vía SSE:
  * - Traza de herramientas agrupada en acordeón (estilo Claude Desktop / Cursor)
  * - Renderizado Markdown rico con tablas GFM, encabezados y bloques de código
@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SpecterClient } from "@specter/sdk";
+import type { WraithClient } from "@wraith/sdk";
 import { useStore } from "../store";
 import type { ChatMessage as ChatMessageType } from "../store";
 import { Button, Icon, Tag, useAutoScroll } from "../ui";
@@ -53,7 +53,7 @@ function groupMessages(messages: ChatMessageType[]): GroupedItem[] {
 }
 
 export interface AgentConsoleProps {
-  client: SpecterClient;
+  client: WraithClient;
 }
 
 export default function AgentConsole({ client }: AgentConsoleProps) {
@@ -119,6 +119,10 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
     void client.cancelRuns(activeCaseId ?? undefined).catch(() => undefined);
     setAgentBusy(false);
     pushMessage({ role: "system", content: "Investigación detenida por el analista." });
+    // Las tool calls en vuelo nunca recibirán su `tool.completed`: el servidor
+    // ya canceló la iteración. Sin esto quedan en `running` para siempre y el
+    // grupo de operaciones se queda girando como si el run siguiera vivo.
+    useStore.getState().interruptRunningTools();
     useStore.getState().closeStream();
   }, [client, activeCaseId, pushMessage, setAgentBusy]);
 
@@ -355,7 +359,7 @@ export default function AgentConsole({ client }: AgentConsoleProps) {
                 </h2>
 
                 <p className="mx-auto mb-5 max-w-md text-[13px] leading-relaxed text-text-base">
-                  Ingresa un objetivo de investigación (dominio, dirección IP, nombre de persona o alias). Specter triangulará registros públicos, rastreará huellas digitales y consolidará las evidencias en el libro mayor forense.
+                  Ingresa un objetivo de investigación (dominio, dirección IP, nombre de persona o alias). Wraith triangulará registros públicos, rastreará huellas digitales y consolidará las evidencias en el libro mayor forense.
                 </p>
 
                 <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border-weak-base/60 pt-3">

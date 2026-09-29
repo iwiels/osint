@@ -1,11 +1,11 @@
 /**
- * App - consola forense Specter.
+ * App - consola forense Wraith.
  * Layout: sidebar de casos | consola del agente (fija) | panel de evidencias (grafo, timeline, correlaciones, custodia).
  * Al montar: health-check del engine y suscripción al event bus (SSE).
  */
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { SpecterClient, connectEvents } from "@specter/sdk";
+import { WraithClient, connectEvents } from "@wraith/sdk";
 import { PANEL_BREAKPOINTS, useStore, type PanelState } from "./store";
 import { IconButton, Tag, cn } from "./ui";
 import Sidebar from "./components/Sidebar";
@@ -15,16 +15,16 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ModelSelector } from "./components/chat";
 
 /** Puente mínimo con main (preload). Todo opcional: también corre en navegador. */
-interface SpecterDesktopBridge {
+interface WraithDesktopBridge {
   checkHealth?: () => Promise<unknown>;
   getEngineToken?: () => Promise<string | null>;
   revealInFolder?: (fsPath: string) => Promise<boolean>;
   openExternal?: (url: string) => Promise<boolean>;
 }
 
-function desktopBridge(): SpecterDesktopBridge | undefined {
+function desktopBridge(): WraithDesktopBridge | undefined {
   if (typeof window === "undefined") return undefined;
-  return (window as unknown as { specterDesktop?: SpecterDesktopBridge }).specterDesktop;
+  return (window as unknown as { wraithDesktop?: WraithDesktopBridge }).wraithDesktop;
 }
 
 export default function App() {
@@ -62,7 +62,7 @@ export default function App() {
 
   const client = useMemo(
     () =>
-      new SpecterClient({
+      new WraithClient({
         baseUrl: engineUrl,
         defaultHeaders: engineToken ? { Authorization: `Bearer ${engineToken}` } : {},
       }),
@@ -101,7 +101,7 @@ export default function App() {
         isHealthy = true;
         if (!cancelled) useStore.getState().setEngineHealth(health);
       } catch (err) {
-        console.warn("[specter] client.health() fetch fallo:", err);
+        console.warn("[wraith] client.health() fetch fallo:", err);
         // Fallback a IPC desde proceso principal Node si el navegador tuviera restricciones
         const res = await desktopBridge()?.checkHealth?.();
         if (res) isHealthy = true;
@@ -124,7 +124,7 @@ export default function App() {
             if (!currentActive || !fetchedCases.some((c) => c.case_id === currentActive)) {
               const stored =
                 typeof window !== "undefined"
-                  ? localStorage.getItem("specter:activeCaseId")
+                  ? localStorage.getItem("wraith:activeCaseId")
                   : null;
               if (stored && fetchedCases.some((c) => c.case_id === stored)) {
                 useStore.getState().setActiveCase(stored);
@@ -134,7 +134,7 @@ export default function App() {
             }
           }
         } catch (casesErr) {
-          console.warn("[specter] error cargando expedientes:", casesErr);
+          console.warn("[wraith] error cargando expedientes:", casesErr);
         }
 
         if (!dispose && !cancelled) {
@@ -143,8 +143,19 @@ export default function App() {
               engineUrl,
               {
                 "permission.request": (payload) =>
-                  useStore.getState().setPendingPermission(payload as never),
-                "permission.granted": () => useStore.getState().setPendingPermission(null),
+                  useStore.getState().enqueuePermission(payload as never),
+                "permission.granted": (payload) => {
+                  const p = payload as { request_id?: string };
+                  if (p?.request_id) useStore.getState().resolvePermission(p.request_id);
+                  else useStore.getState().clearPermissions();
+                },
+                // El motor rindió la petición (300s sin respuesta): retira el
+                // diálogo obsoleto para que el analista no responda a un id ya
+                // caducado y reciba un 404.
+                "permission.timeout": (payload) => {
+                  const p = payload as { request_id?: string };
+                  if (p?.request_id) useStore.getState().resolvePermission(p.request_id);
+                },
                 "question.asked": (payload) =>
                   useStore.getState().setPendingQuestion(payload as never),
                 "tool.started": (payload) => {
@@ -192,7 +203,7 @@ export default function App() {
                   const p = payload as { usage?: { input_tokens: number; output_tokens: number } };
                   useStore.getState().closeStream();
                   useStore.getState().setUsage(p.usage ?? null);
-                  useStore.getState().setPendingPermission(null);
+                  useStore.getState().clearPermissions();
                   useStore.getState().setPendingQuestion(null);
                   useStore.getState().bumpCaseData();
                   useStore.getState().bumpSessions();
@@ -208,7 +219,7 @@ export default function App() {
               engineToken ?? undefined,
             );
           } catch (sseErr) {
-            console.warn("[specter] fallo al conectar SSE:", sseErr);
+            console.warn("[wraith] fallo al conectar SSE:", sseErr);
           }
         }
       } else {
@@ -301,7 +312,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="size-2 rounded-xs bg-brand" />
             <span className="font-display text-[13px] font-semibold tracking-tight text-text-strong">
-              Specter<span className="text-text-brand">OSINT</span>
+              Wraith<span className="text-text-brand">OSINT</span>
             </span>
             <Tag>v0.2.0</Tag>
           </div>

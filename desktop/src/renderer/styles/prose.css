@@ -1,14 +1,14 @@
 /* ============================================================
-   SpecterOSINT — Prosa (informes del agente)
+   WraithOSINT — Prosa (informes del agente)
    ------------------------------------------------------------
    Markdown que devuelve el agente en la consola y en los dossiers.
-   Se usa desde `ReactMarkdown` con la clase `.prose-specter`; en la
+   Se usa desde `ReactMarkdown` con la clase `.prose-wraith`; en la
    migración de la consola pasará a `session-ui/markdown` con sus propias
    reglas por `[data-slot]`.
    ============================================================ */
 
 @layer components {
-  .prose-specter {
+  .prose-wraith {
     color: var(--text-strong);
     font-family: var(--font-family-sans);
     font-size: var(--font-size-base);

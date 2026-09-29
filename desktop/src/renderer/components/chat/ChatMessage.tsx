@@ -77,7 +77,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       data-component="chat-assistant-message"
       className="group relative self-start mr-auto w-full max-w-[94%] rounded-sm border border-border-weak-base bg-surface-raised-base p-4 shadow-paper-xs"
     >
-      <div className="prose-specter select-text">
+      <div className="prose-wraith select-text">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
@@ -96,9 +96,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
                     e.preventDefault();
                     const desktop = (
                       window as unknown as {
-                        specterDesktop?: { openExternal?: (u: string) => Promise<boolean> };
+                        wraithDesktop?: { openExternal?: (u: string) => Promise<boolean> };
                       }
-                    ).specterDesktop;
+                    ).wraithDesktop;
                     void desktop?.openExternal?.(safe);
                   }}
                   {...props}

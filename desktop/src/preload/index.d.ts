@@ -2,7 +2,7 @@ export {};
 
 declare global {
   interface Window {
-    specterDesktop?: {
+    wraithDesktop?: {
       platform: string;
       revealInFolder: (fsPath: string) => Promise<boolean>;
     };

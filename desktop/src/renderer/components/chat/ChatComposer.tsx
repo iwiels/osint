@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import type {
   PermissionRequestPayload,
   QuestionAskedPayload,
-  SpecterClient,
-} from "@specter/sdk";
+  WraithClient,
+} from "@wraith/sdk";
 import { Button, Tag } from "../../ui";
 import { SessionPermissionDock, SessionQuestionDock } from "../DockPrompt";
 
@@ -15,7 +15,7 @@ export interface ChatComposerProps {
   isBusy: boolean;
   disabled?: boolean;
   placeholder?: string;
-  client: SpecterClient;
+  client: WraithClient;
   providerLabel?: string;
   modelLabel?: string;
   onOpenModelSettings?: () => void;

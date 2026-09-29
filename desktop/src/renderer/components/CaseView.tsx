@@ -15,7 +15,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import type { SpecterClient } from "@specter/sdk";
+import type { WraithClient } from "@wraith/sdk";
 import { useStore } from "../store";
 import ErrorBoundary from "./ErrorBoundary";
 import { Button, Icon, IconButton, cn } from "../ui";
@@ -40,7 +40,7 @@ export {
 } from "./evidence";
 
 export interface CaseViewProps {
-  client: SpecterClient;
+  client: WraithClient;
   caseId?: string;
   tab?: CaseViewTab;
   onTabChange?: (tab: CaseViewTab) => void;
@@ -103,16 +103,16 @@ export default function CaseView({
     ]);
     const store = useStore.getState();
     if (gRes.status === "fulfilled") store.setGraph(gRes.value);
-    else console.warn("[specter] error al cargar grafo:", gRes.reason);
+    else console.warn("[wraith] error al cargar grafo:", gRes.reason);
 
     if (lRes.status === "fulfilled") store.setLedger(lRes.value);
-    else console.warn("[specter] error al cargar ledger:", lRes.reason);
+    else console.warn("[wraith] error al cargar ledger:", lRes.reason);
 
     if (tRes.status === "fulfilled") store.setTimeline(tRes.value);
-    else console.warn("[specter] error al cargar timeline:", tRes.reason);
+    else console.warn("[wraith] error al cargar timeline:", tRes.reason);
 
     if (cRes.status === "fulfilled") store.setCorrelations(cRes.value);
-    else console.warn("[specter] error al cargar correlaciones:", cRes.reason);
+    else console.warn("[wraith] error al cargar correlaciones:", cRes.reason);
 
     store.setAttestation(null);
   };
@@ -125,7 +125,7 @@ export default function CaseView({
       try {
         await load(activeCaseId);
       } catch (err) {
-        if (!cancelled) console.warn("[specter] error cargando el caso:", err);
+        if (!cancelled) console.warn("[wraith] error cargando el caso:", err);
       } finally {
         if (!cancelled) setBusy(false);
       }

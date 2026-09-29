@@ -1,5 +1,5 @@
 /**
- * Barrel export para los componentes de evidencia forense de Specter.
+ * Barrel export para los componentes de evidencia forense de Wraith.
  */
 
 export { GraphCanvas } from "./GraphCanvas";
