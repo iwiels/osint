@@ -39,6 +39,10 @@ jobs:
             target: linux-x64
           - os: macos-15-intel # Intel → binario x64
             target: mac-x64
+            # cryptography (llega por mcp) dejó de publicar wheels de macOS x86_64 en la 49:
+            # pip la compilaría desde el código fuente y el binario de PyInstaller fallaría
+            # al arrancar con un libssl distinto. La 48 aún trae wheel universal2.
+            pip_extra: '"cryptography<49"'
           - os: macos-latest # Apple Silicon → binario arm64
             target: mac-arm64
     steps:
@@ -53,7 +57,7 @@ jobs:
       - name: Instalar dependencias + PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install -r engine/requirements.txt pyinstaller
+          pip install -r engine/requirements.txt pyinstaller ${{ matrix.pip_extra }}
 
       - name: Compilar binario del motor
         run: python scripts/build-engine.py
