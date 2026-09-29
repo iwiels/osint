@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { AgentSession } from "@specter/sdk";
+import type { AgentSession } from "@wraith/sdk";
 import { Icon, IconButton, Tag, TextField } from "../../ui";
 
 export interface SessionHistoryProps {

@@ -3,7 +3,7 @@
  * (Grafo, Timeline, Correlaciones, Custodia Forense).
  */
 
-import type { EntityNode } from "@specter/sdk";
+import type { EntityNode } from "@wraith/sdk";
 
 export type CaseViewTab = "graph" | "timeline" | "correlations" | "ledger";
 

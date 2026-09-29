@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
-import type { EntityNode } from "@specter/sdk";
+import type { EntityNode } from "@wraith/sdk";
 import { Icon } from "../../ui";
 import { EmptyState } from "./EmptyState";
 import { GraphControls } from "./GraphControls";

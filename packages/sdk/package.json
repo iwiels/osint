@@ -1,7 +1,7 @@
 {
-  "name": "@specter/sdk",
+  "name": "@wraith/sdk",
   "version": "0.2.0",
-  "description": "TypeScript SDK for the Specter forensic OSINT engine (REST + SSE)",
+  "description": "TypeScript SDK for the Wraith forensic OSINT engine (REST + SSE)",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.ts",

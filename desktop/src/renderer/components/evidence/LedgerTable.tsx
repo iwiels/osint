@@ -3,8 +3,8 @@ import type {
   LedgerAttestation,
   LedgerBlock,
   LedgerReport,
-  SpecterClient,
-} from "@specter/sdk";
+  WraithClient,
+} from "@wraith/sdk";
 import { Button, Tag } from "../../ui";
 import { EmptyState } from "./EmptyState";
 import { STATUS_LABEL, STATUS_TONE } from "./types";
@@ -12,7 +12,7 @@ import { STATUS_LABEL, STATUS_TONE } from "./types";
 interface LedgerTableProps {
   report: LedgerReport | null;
   attestation: LedgerAttestation | null;
-  client: SpecterClient;
+  client: WraithClient;
   caseId: string;
   busy: boolean;
   onSeal?: () => Promise<void>;
@@ -47,7 +47,7 @@ export function LedgerTable({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.warn("[specter] error al copiar atestación:", err);
+      console.warn("[wraith] error al copiar atestación:", err);
     }
   };
 

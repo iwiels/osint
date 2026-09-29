@@ -1,7 +1,7 @@
 /**
  * EngineSidecar - gestiona el proceso del motor forense Python.
  * - Dev:    python -m engine.http_server (desde el repo)
- * - Prod:   engine/specter-engine.exe (PyInstaller onefile) junto a la app
+ * - Prod:   engine/wraith-engine.exe (PyInstaller onefile) junto a la app
  * Health-check con reintentos antes de declarar listo el motor.
  */
 
@@ -12,11 +12,33 @@ import fs from "node:fs";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 
+/**
+ * Reenvía la salida del engine prefijando CADA línea con `[engine]`.
+ *
+ * Prefijar el chunk entero (lo que había antes) sólo marcaba la primera
+ * línea: en ráfagas multilínea —típico de uvicorn y de los warnings del
+ * navegador— el resto salía sin prefijo y era indistinguible del log del
+ * renderer. Los trozos se acumulan porque un chunk de pipe puede cortar una
+ * línea por la mitad.
+ */
+function createLineForwarder(write: (msg: string) => void): (chunk: Buffer) => void {
+  let pending = "";
+  return (chunk: Buffer) => {
+    pending += chunk.toString();
+    const lines = pending.split(/\r?\n/);
+    // El último elemento puede ser una línea incompleta: se guarda.
+    pending = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.length > 0) write(`[engine] ${line}`);
+    }
+  };
+}
+
 const ENGINE_PORT = Number(process.env.SPECTER_ENGINE_PORT || 8787);
 const BASE_URL = `http://127.0.0.1:${ENGINE_PORT}`;
 
 /** Nombre del binario del motor según plataforma (PyInstaller añade .exe en Windows). */
-const ENGINE_BINARY = process.platform === "win32" ? "specter-engine.exe" : "specter-engine";
+const ENGINE_BINARY = process.platform === "win32" ? "wraith-engine.exe" : "wraith-engine";
 
 export interface EngineInfo {
   baseUrl: string;
@@ -216,7 +238,7 @@ export class EngineSidecar {
         env: {
           ...process.env,
           PYTHONUNBUFFERED: "1",
-          // Refuerzo: garantiza que 'engine' y 'specter' sean importables
+          // Refuerzo: garantiza que 'engine' y 'wraith' sean importables
           // aunque el cwd no fuera la raíz del repo.
           PYTHONPATH: repoRoot,
           SPECTER_DATA_DIR: path.join(repoRoot, "data"),
@@ -231,8 +253,8 @@ export class EngineSidecar {
         detached: process.platform !== "win32",
       },
     );
-    this.child.stdout?.on("data", (d: Buffer) => console.log(`[engine] ${d.toString().trim()}`));
-    this.child.stderr?.on("data", (d: Buffer) => console.error(`[engine] ${d.toString().trim()}`));
+    this.child.stdout?.on("data", createLineForwarder(console.log));
+    this.child.stderr?.on("data", createLineForwarder(console.error));
     this.child.on("error", (err) => {
       console.error("[engine] fallo al spawn del proceso:", err.message);
     });
@@ -265,7 +287,7 @@ export class EngineSidecar {
       // POSIX: grupo de procesos propio para poder matar el árbol en stop().
       detached: process.platform !== "win32",
     });
-    this.child.stdout?.on("data", (d: Buffer) => console.log(`[engine] ${d.toString().trim()}`));
-    this.child.stderr?.on("data", (d: Buffer) => console.error(`[engine] ${d.toString().trim()}`));
+    this.child.stdout?.on("data", createLineForwarder(console.log));
+    this.child.stderr?.on("data", createLineForwarder(console.error));
   }
 }

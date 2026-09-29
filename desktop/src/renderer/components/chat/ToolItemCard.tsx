@@ -13,6 +13,7 @@ export function ToolItemCard({ message }: ToolItemCardProps) {
 
   const isRunning = message.status === "running";
   const isError = message.status === "error";
+  const isInterrupted = message.status === "interrupted";
 
   const copyContent = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -28,6 +29,7 @@ export function ToolItemCard({ message }: ToolItemCardProps) {
 
   const summary = useMemo(() => {
     if (isRunning) return "En ejecución…";
+    if (isInterrupted) return "Interrumpida por el analista";
     if (message.args && typeof message.args === "object") {
       const rec = message.args as Record<string, unknown>;
       const primary = rec.query || rec.url || rec.target || rec.term || rec.domain || rec.name || rec.username;
@@ -51,7 +53,7 @@ export function ToolItemCard({ message }: ToolItemCardProps) {
     const sanitized = clean.replace(/^[{\[\s\n]+/, "").split("\n")[0].trim();
     if (!sanitized) return "Completado";
     return sanitized.length > 45 ? `${sanitized.slice(0, 45)}…` : sanitized;
-  }, [message.content, message.args, isRunning]);
+  }, [message.content, message.args, isRunning, isInterrupted]);
 
   return (
     <div
@@ -70,6 +72,8 @@ export function ToolItemCard({ message }: ToolItemCardProps) {
             <span className="size-1.5 shrink-0 rounded-full bg-brand animate-dot-live shadow-[0_0_6px_var(--brand)]" />
           ) : isError ? (
             <span className="size-1.5 shrink-0 rounded-full bg-critical" />
+          ) : isInterrupted ? (
+            <span className="size-1.5 shrink-0 rounded-full bg-text-weaker" />
           ) : (
             <span className="size-1.5 shrink-0 rounded-full bg-success" />
           )}
@@ -104,27 +108,41 @@ export function ToolItemCard({ message }: ToolItemCardProps) {
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[9px] font-semibold tracking-wider text-text-weak uppercase">
-              Resultado ({message.content.length} caracteres)
-            </span>
-            {message.content && (
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={copyContent}
-                className="h-5 px-1.5 font-mono text-[10px] text-text-weak hover:text-text-brand"
-                title="Copiar resultado"
-              >
-                <Icon name={copied ? "check" : "copy"} size="small" tone={copied ? "success" : "weak"} />
-                <span>{copied ? "Copiado" : "Copiar"}</span>
-              </Button>
-            )}
-          </div>
+          {/* Sin resultado todavía, no se rotula nada como "Resultado": el
+              bloque se muestra sólo cuando existe. Antes se pintaba siempre con
+              un placeholder y, si la llamada quedaba en vuelo, los parámetros de
+              entrada aparecían duplicados aquí abajo como si fueran la salida. */}
+          {isRunning || isInterrupted || message.content ? (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-semibold tracking-wider text-text-weak uppercase">
+                  {isInterrupted
+                    ? "Resultado (interrumpido)"
+                    : `Resultado (${message.content.length} caracteres)`}
+                </span>
+                {message.content && !isInterrupted && (
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={copyContent}
+                    className="h-5 px-1.5 font-mono text-[10px] text-text-weak hover:text-text-brand"
+                    title="Copiar resultado"
+                  >
+                    <Icon name={copied ? "check" : "copy"} size="small" tone={copied ? "success" : "weak"} />
+                    <span>{copied ? "Copiado" : "Copiar"}</span>
+                  </Button>
+                )}
+              </div>
 
-          <pre className="mt-1.5 max-h-56 overflow-auto rounded border border-border-weak-base bg-surface-inset-base p-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap text-text-strong select-text">
-            {message.content || "(sin salida)"}
-          </pre>
+              <pre className="mt-1.5 max-h-56 overflow-auto rounded border border-border-weak-base bg-surface-inset-base p-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap text-text-strong select-text">
+                {isRunning
+                  ? "Ejecutando…"
+                  : isInterrupted
+                    ? "El analista detuvo el run antes de que esta operación devolviera un resultado."
+                    : message.content || "(sin salida)"}
+              </pre>
+            </>
+          ) : null}
         </div>
       )}
     </div>

@@ -12,6 +12,9 @@ export function ToolActivityGroup({ tools }: ToolActivityGroupProps) {
   const runningTools = tools.filter((t) => t.status === "running");
   const isAnyRunning = runningTools.length > 0;
   const hasErrors = tools.some((t) => t.status === "error");
+  // Un grupo donde todo se interrumpió no es un grupo exitoso: sin esto se
+  // pintaría con el punto verde de "completado".
+  const hasInterrupted = tools.some((t) => t.status === "interrupted");
 
   // Live runs open automatically so the analyst sees real-time operations;
   // when finished, user preference is preserved.
@@ -44,6 +47,8 @@ export function ToolActivityGroup({ tools }: ToolActivityGroupProps) {
             <span className="size-2 shrink-0 rounded-full bg-brand animate-dot-live shadow-[0_0_6px_var(--brand)]" />
           ) : hasErrors ? (
             <span className="size-2 shrink-0 rounded-full bg-critical" />
+          ) : hasInterrupted ? (
+            <span className="size-2 shrink-0 rounded-full bg-text-weaker" />
           ) : (
             <span className="size-2 shrink-0 rounded-full bg-success" />
           )}

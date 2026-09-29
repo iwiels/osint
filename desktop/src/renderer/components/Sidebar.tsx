@@ -9,8 +9,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SpecterClient } from "@specter/sdk";
-import type { AgentSession, AgentSessionMessage } from "@specter/sdk";
+import type { WraithClient } from "@wraith/sdk";
+import type { AgentSession, AgentSessionMessage } from "@wraith/sdk";
 import { Button, IconButton, TextArea, TextField } from "../ui";
 import { useStore } from "../store";
 import type { ChatMessage } from "../store";
@@ -24,7 +24,7 @@ function caseCreatedLabel(iso?: string): string {
   return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
 }
 
-export default function Sidebar({ client }: { client: SpecterClient }) {
+export default function Sidebar({ client }: { client: WraithClient }) {
   const cases = useStore((s) => s.cases);
   const activeCaseId = useStore((s) => s.activeCaseId);
   const setActiveCase = useStore((s) => s.setActiveCase);

@@ -1,14 +1,15 @@
 {
-  "name": "specter-desktop",
+  "name": "wraith-desktop",
   "version": "0.2.0",
   "private": true,
-  "description": "SpecterOSINT Desktop - Consola forense sobre el engine Specter",
+  "description": "WraithOSINT Desktop - Consola forense sobre el engine Wraith",
   "license": "MIT",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "node --test \"src/renderer/*.test.ts\"",
     "dist": "electron-builder",
     "start": "electron-vite preview"
   },
@@ -28,7 +29,7 @@
     "@radix-ui/react-switch": "^1.3.7",
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
-    "@specter/sdk": "0.2.0",
+    "@wraith/sdk": "0.2.0",
     "@tailwindcss/vite": "4.3.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

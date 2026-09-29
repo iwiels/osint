@@ -1,4 +1,4 @@
-import type { TimelineEvent, TimelineReport } from "@specter/sdk";
+import type { TimelineEvent, TimelineReport } from "@wraith/sdk";
 import { Tag } from "../../ui";
 import { EmptyState } from "./EmptyState";
 import { KIND_COLORS } from "./types";

@@ -6,7 +6,7 @@ Uso:
     .venv/Scripts/python.exe scripts/build-engine.py --dry-run  # sólo preflight + comando
     .venv/Scripts/python.exe scripts/build-engine.py --clean    # limpia y construye
 
-Salida: dist-engine/specter-engine.exe (lo copia el instalador vía extraResources)
+Salida: dist-engine/wraith-engine.exe (lo copia el instalador vía extraResources)
 
 El ejecutable resuelve datos/reportes por variables de entorno (SPECTER_DATA_DIR,
 SPECTER_REPORTS_DIR) y firma su cadena de custodia con `data/ledger.key` del
@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist-engine"
 BUILD = ROOT / "build-engine"
-BINARY_NAME = "specter-engine"
+BINARY_NAME = "wraith-engine"
 WMN_DATA = ROOT / "data" / "wmn-data.json"
 ENTRY = ROOT / "engine" / "http_server.py"
 TEMPLATES = ROOT / "engine" / "specter" / "visualizer" / "templates"

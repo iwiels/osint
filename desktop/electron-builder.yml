@@ -1,5 +1,5 @@
-appId: io.specter.osint
-productName: SpecterOSINT
+appId: io.wraith.osint
+productName: WraithOSINT
 copyright: MIT
 
 directories:
@@ -16,8 +16,8 @@ extraResources:
   - from: ../dist-engine/
     to: engine/
     filter:
-      - "specter-engine"
-      - "specter-engine.exe"
+      - "wraith-engine"
+      - "wraith-engine.exe"
 
 # ------------------------------------------------------------------
 # Windows: instalador NSIS por-usuario (no requiere admin)
@@ -33,7 +33,7 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
-  shortcutName: SpecterOSINT
+  shortcutName: WraithOSINT
 
 # ------------------------------------------------------------------
 # macOS: DMG + ZIP. Sin firma ni notarización configuradas todavía: el

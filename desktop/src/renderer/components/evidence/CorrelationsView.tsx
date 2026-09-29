@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CaseCorrelations, SpecterClient } from "@specter/sdk";
+import type { CaseCorrelations, WraithClient } from "@wraith/sdk";
 import { Button, Tag } from "../../ui";
 import { EmptyState } from "./EmptyState";
 import { FALLBACK_NODE_COLOR, TYPE_COLORS } from "./types";
@@ -7,7 +7,7 @@ import { FALLBACK_NODE_COLOR, TYPE_COLORS } from "./types";
 interface CorrelationsViewProps {
   report: CaseCorrelations | null;
   caseId: string;
-  client: SpecterClient;
+  client: WraithClient;
   onChanged: () => Promise<void>;
 }
 

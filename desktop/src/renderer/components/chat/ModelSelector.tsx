@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { SecretEntry, SpecterClient } from "@specter/sdk";
+import type { SecretEntry, WraithClient } from "@wraith/sdk";
 import { useStore } from "../../store";
 import {
   Button,
@@ -49,7 +49,7 @@ export type SettingsTab = "inference" | "vault" | "params" | "server";
 export interface ModelSelectorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  client: SpecterClient;
+  client: WraithClient;
 }
 
 export function ModelSelector({ open, onOpenChange, client }: ModelSelectorProps) {
@@ -203,7 +203,7 @@ export function ModelSelector({ open, onOpenChange, client }: ModelSelectorProps
 
           {/* Pie de navegación */}
           <div className="border-t border-border-weak-base pt-2.5 px-2 flex items-center justify-between font-mono text-[10px] text-text-weaker">
-            <span>SpecterOSINT</span>
+            <span>WraithOSINT</span>
             <span>v0.2.0</span>
           </div>
         </div>

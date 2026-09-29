@@ -19,7 +19,7 @@ import type {
   PlanStep,
   QuestionAskedPayload,
   TimelineReport,
-} from "@specter/sdk";
+} from "@wraith/sdk";
 
 export interface ChatMessage {
   id: string;
@@ -28,7 +28,12 @@ export interface ChatMessage {
   tool?: string;
   callId?: string;
   args?: unknown;
-  status?: "running" | "completed" | "error";
+  /**
+   * `interrupted`: la llamada estaba en vuelo cuando el analista detuvo el run,
+   * así que nunca llegó su `tool.completed`. No está `error` porque la tool
+   * puede que no fallara; simplemente no se conoce el resultado.
+   */
+  status?: "running" | "completed" | "error" | "interrupted";
   ts: number;
   /** true mientras el texto llega token a token (fase C). */
   streaming?: boolean;
@@ -79,7 +84,7 @@ export interface RunOptions {
   autoApprove: boolean;
 }
 
-interface SpecterState {
+interface WraithState {
   // Armazón (ventana estrecha: plegar paneles libera el expediente)
   panels: PanelState;
   togglePanel: (panel: keyof PanelState) => void;
@@ -139,10 +144,18 @@ interface SpecterState {
   clearChat: () => void;
   startToolCall: (callId: string, tool: string, args?: unknown) => void;
   completeToolCall: (callId: string, tool: string, result: string) => void;
-
-  // Permisos
+  /** Cierra las tool calls en vuelo al detener el run: ya no recibirán su `tool.completed`. */
+  interruptRunningTools: () => void;
+  // Permisos: cola. El agente ejecuta los tool calls de un turno en paralelo
+  // y cada tool sensible emite su propia `permission.request`; con un único
+  // hueco la última petición tapaba a la anterior y esa nunca se respondía
+  // (timeout de 300s). `pendingPermission` es la cabeza de la cola.
   pendingPermission: PermissionRequestPayload | null;
-  setPendingPermission: (p: PermissionRequestPayload | null) => void;
+  permissionQueue: PermissionRequestPayload[];
+  enqueuePermission: (p: PermissionRequestPayload) => void;
+  /** Retira de la cola la petición con ese request_id (resuelta o caducada). */
+  resolvePermission: (requestId: string) => void;
+  clearPermissions: () => void;
 
   // Preguntas del agente al analista (tool ask_analyst)
   pendingQuestion: QuestionAskedPayload | null;
@@ -172,6 +185,24 @@ function newMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Localiza la tarjeta de tool a la que pertenece un evento del motor.
+ *
+ * Con `callId` el emparejamiento es EXACTO y no se admite ningún fallback por
+ * nombre: dos llamadas paralelas de la misma tool comparten nombre, así que el
+ * fallback cruzaba las tarjetas (el resultado de una acababa en la de otra y la
+ * segunda quedaba huérfana, sin parámetros y fuera de orden).
+ *
+ * Sin `callId` no hay forma de desambiguar, así que se empareja con la más
+ * antigua en vuelo: es la que corresponde al primer `tool.completed` que llegue.
+ */
+function findToolCallIndex(chat: ChatMessage[], callId: string, tool: string): number {
+  if (callId) return chat.findIndex((m) => m.role === "tool" && m.callId === callId);
+  return chat.findIndex(
+    (m) => m.role === "tool" && m.tool === tool && m.status === "running",
+  );
+}
+
 function getInitialEngineUrl(): string {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
@@ -184,7 +215,7 @@ function getInitialEngineUrl(): string {
 function getInitialCaseId(): string | null {
   if (typeof window !== "undefined") {
     try {
-      return localStorage.getItem("specter:activeCaseId") || null;
+      return localStorage.getItem("wraith:activeCaseId") || null;
     } catch {
       return null;
     }
@@ -192,7 +223,7 @@ function getInitialCaseId(): string | null {
   return null;
 }
 
-export const useStore = create<SpecterState>((set, get) => ({
+export const useStore = create<WraithState>((set, get) => ({
   panels: initialPanels(),
   togglePanel: (panel) =>
     set((s) => ({ panels: { ...s.panels, [panel]: !s.panels[panel] } })),
@@ -214,8 +245,8 @@ export const useStore = create<SpecterState>((set, get) => ({
   setActiveCase: (caseId) => {
     if (typeof window !== "undefined") {
       try {
-        if (caseId) localStorage.setItem("specter:activeCaseId", caseId);
-        else localStorage.removeItem("specter:activeCaseId");
+        if (caseId) localStorage.setItem("wraith:activeCaseId", caseId);
+        else localStorage.removeItem("wraith:activeCaseId");
       } catch {
         // ignore
       }
@@ -304,19 +335,17 @@ export const useStore = create<SpecterState>((set, get) => ({
       plan: null,
       usage: null,
       historyView: null,
+      permissionQueue: [],
       pendingPermission: null,
       pendingQuestion: null,
     }),
 
   startToolCall: (callId, tool, args) =>
     set((s) => {
-      // Si ya existe el callId en running, no duplicamos
-      const existing = s.chat.find(
-        (m) =>
-          (callId && m.callId === callId) ||
-          (m.role === "tool" && m.tool === tool && m.status === "running"),
-      );
-      if (existing) return s;
+      // Deduplicación sólo por callId. Con el fallback por nombre, un segundo
+      // `tool.started` de la misma tool en paralelo se descartaba y su tarjeta
+      // nunca se creaba.
+      if (callId && s.chat.some((m) => m.role === "tool" && m.callId === callId)) return s;
       return {
         chat: [
           ...s.chat,
@@ -327,7 +356,12 @@ export const useStore = create<SpecterState>((set, get) => ({
             tool,
             status: "running",
             args,
-            content: typeof args === "object" && args !== null ? JSON.stringify(args, null, 2) : "",
+            // `content` arranca VACÍO a propósito. Antes se sembraba con los
+            // argumentos, y como la tarjeta se renderiza bajo un encabezado que
+            // dice "Resultado", cualquier llamada que no llegara a completarse
+            // (run cancelado) quedaba mostrando los parámetros de entrada como
+            // si fueran el resultado de la tool.
+            content: "",
             ts: Date.now(),
           },
         ],
@@ -349,17 +383,7 @@ export const useStore = create<SpecterState>((set, get) => ({
         // no json
       }
 
-      let idx = -1;
-      for (let i = s.chat.length - 1; i >= 0; i--) {
-        const m = s.chat[i];
-        if (
-          (callId && m.callId === callId) ||
-          (m.role === "tool" && m.tool === tool && m.status === "running")
-        ) {
-          idx = i;
-          break;
-        }
-      }
+      const idx = findToolCallIndex(s.chat, callId, tool);
 
       if (idx !== -1) {
         const updated = [...s.chat];
@@ -380,14 +404,48 @@ export const useStore = create<SpecterState>((set, get) => ({
             tool,
             status,
             content: result,
+            // Sin `args`: sólo se llega aquí si la UI perdió el `tool.started`
+            // (p. ej. se reconectó al stream a mitad de run). Antes esta tarjeta
+            // nacía ya completada y sin parámetros, lo que la hacía
+            // indistinguible de una tool sin argumentos de entrada.
             ts: Date.now(),
           },
         ],
       };
     }),
 
+  /**
+   * Cierra las llamadas que seguían en vuelo al detener el run: su
+   * `tool.completed` ya no va a llegar porque el servidor canceló la iteración.
+   * Sin esto quedaban en `running` para siempre, con el grupo de operaciones
+   * marcado como vivo y el spinner girando para siempre.
+   */
+  interruptRunningTools: () =>
+    set((s) => {
+      if (!s.chat.some((m) => m.role === "tool" && m.status === "running")) return s;
+      return {
+        chat: s.chat.map((m) =>
+          m.role === "tool" && m.status === "running"
+            ? { ...m, status: "interrupted" as const }
+            : m,
+        ),
+      };
+    }),
+
   pendingPermission: null,
-  setPendingPermission: (p) => set({ pendingPermission: p }),
+  permissionQueue: [],
+  enqueuePermission: (p) =>
+    set((s) => {
+      if (s.permissionQueue.some((r) => r.request_id === p.request_id)) return s;
+      const queue = [...s.permissionQueue, p];
+      return { permissionQueue: queue, pendingPermission: queue[0] };
+    }),
+  resolvePermission: (requestId) =>
+    set((s) => {
+      const queue = s.permissionQueue.filter((r) => r.request_id !== requestId);
+      return { permissionQueue: queue, pendingPermission: queue[0] ?? null };
+    }),
+  clearPermissions: () => set({ permissionQueue: [], pendingPermission: null }),
 
   pendingQuestion: null,
   setPendingQuestion: (q) => set({ pendingQuestion: q }),
@@ -403,6 +461,7 @@ export const useStore = create<SpecterState>((set, get) => ({
       plan: null,
       usage: null,
       historyView: null,
+      permissionQueue: [],
       pendingPermission: null,
       pendingQuestion: null,
     }),
