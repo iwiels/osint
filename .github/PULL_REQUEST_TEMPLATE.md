@@ -1,28 +1,24 @@
-# Descripción
+# Description
 
-<!-- Qué cambia y, sobre todo, POR QUÉ. -->
+<!-- What changes, and most importantly, why? -->
 
-## Tipo de cambio
+## Type of change
 
-- [ ] `feat` — funcionalidad nueva
-- [ ] `fix` — corrección de bug
-- [ ] `refactor` — sin cambio de comportamiento
-- [ ] `docs` — documentación
-- [ ] `test` — tests
-- [ ] `chore` — mantenimiento, dependencias, CI
+- [ ] Feature — new functionality
+- [ ] Fix — bug fix
+- [ ] Refactor — no behavior change
+- [ ] Docs — documentation
+- [ ] Test — tests
+- [ ] Chore — maintenance, dependencies, or CI
 
 ## Checklist
 
-- [ ] `npm run verify` pasa en local (lint, tests, contrato, a11y, tipos, build).
-- [ ] Si toqué arquitectura (transporte, almacenamiento, seguridad, empaquetado),
-      añadí o actualicé un [ADR](docs/adr/README.md) en este mismo PR.
-- [ ] Si añadí un colector o una capacidad de doble uso, actualicé
-      [LEGAL.md](LEGAL.md).
-- [ ] No incluí datos de investigaciones reales (dossiers, capturas, base de
-      datos, claves) ni identificadores de personas reales en código, tests,
-      fixtures o documentación.
-- [ ] Si toqué el contrato del motor, regeneré el SDK (`npm run gen:sdk`).
+- [ ] npm run verify passes locally (lint, tests, contract, accessibility, types, build).
+- [ ] If I changed architecture (transport, storage, security, or packaging), I added or updated an [ADR](docs/adr/README.md) in this pull request.
+- [ ] If I added a collector or dual-use capability, I updated [LEGAL.md](LEGAL.md).
+- [ ] I did not include real investigation data (dossiers, captures, databases, or keys) or identifying information about real people in code, tests, fixtures, or documentation.
+- [ ] If I changed the engine contract, I regenerated the SDK with npm run gen:sdk.
 
-## Notas para quien revisa
+## Notes for reviewers
 
-<!-- Decisiones discutibles, partes que quieres que se miren con lupa, dudas abiertas. -->
+<!-- Decisions that may need discussion, areas to review closely, or open questions. -->

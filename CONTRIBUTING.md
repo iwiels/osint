@@ -1,103 +1,106 @@
-# Contribuir a WraithOSINT
+# Contributing to WraithOSINT
 
-Gracias por interesarte. Este documento define las convenciones que mantiene el
-proyecto escalable: las mismas que aplica la CI.
+Thank you for your interest in contributing. This guide documents the
+conventions that keep the project maintainable and that CI checks.
 
-## Setup rápido
+## Quick setup
 
-Requisitos: **Node 22+** y **Python 3.11 o 3.12** (el rango que verifica la CI).
+Requirements: **Node.js 22+** and **Python 3.11 or 3.12** (the versions checked
+by CI).
 
-```bash
-# 1. JS + prep del venv del engine (postinstall automático)
-npm ci
+    # 1. Install JavaScript dependencies. The postinstall hook prepares the engine
+    # virtual environment when Python is available.
+    npm ci
 
-# 2. Dependencias Python del engine + herramientas de calidad
-pip install -r engine/requirements.txt pytest pytest-cov ruff
-#    Si usas uv sobre el .venv del repo:
-#    uv pip install --python .venv/Scripts/python.exe pytest pytest-cov ruff
-```
+    # 2. Install Python quality tools in the engine virtual environment.
+    engine/.venv/bin/python -m pip install pytest pytest-cov ruff
 
-`npm ci` (no `npm install`) es lo que corre la CI: exige que `package-lock.json`
-esté sincronizado. Si añades una dependencia, commitea también el lock.
+On Windows, use engine\.venv\Scripts\python.exe instead of
+engine/.venv/bin/python.
 
-## Definition of Done (lo que la CI hace cumplir)
+npm ci is what CI runs. It requires package-lock.json to match the package.json
+files. If you add a dependency, commit the updated lockfile too.
 
-Un PR se considera listo cuando **todo** esto pasa en local:
+## Definition of Done
 
-| Gate | Comando | Gate en CI |
+A pull request is ready when all of these checks pass locally:
+
+| Gate | Command | CI job |
 |---|---|---|
-| Lint Python | `ruff check engine/ tests/` | job `engine` |
-| Formato Python | `ruff format --check engine/ tests/` | job `engine` |
-| Tests + cobertura ≥ 80% | `pytest tests/ -q` | job `engine` (Python 3.11 y 3.12) |
-| Contrato motor↔SDK | `npm run gen:sdk:check` | job `engine` |
-| Contraste WCAG AA | `npm run a11y:contrast` | job `web` |
-| Typecheck TS | `npm run typecheck` | job `web` |
-| Tests SDK + cobertura | `npm test` | job `web` |
-| Build producción | `npm run build` | job `web` |
+| Python lint | ruff check engine/ tests/ | engine |
+| Python formatting | ruff format --check engine/ tests/ | engine |
+| Tests and coverage ≥ 80% | pytest tests/ -q | engine (Python 3.11 and 3.12) |
+| Engine ↔ SDK contract | npm run gen:sdk:check | engine |
+| WCAG AA contrast | npm run a11y:contrast | web |
+| TypeScript typecheck | npm run typecheck | web |
+| SDK tests and coverage | npm test | web |
+| Desktop tests | npm run test:desktop | web |
+| Production build | npm run build | web |
 
-```bash
-# Atajo para pasar todo antes de pushear (equivalente a la CI):
-npm run verify
-```
+    # Run all project checks before pushing.
+    npm run verify
 
-## Regla dura: nada de datos reales
+## No real investigation data
 
-Este proyecto es una herramienta forense y su repositorio es público. **Nunca**
-commitees:
+This is a forensic tool and its repository is public. **Never commit:**
 
-- identificadores de personas reales (usuarios, emails, teléfonos, DNIs,
-  dominios de objetivos) — ni en código, ni en tests, ni en fixtures, ni en
-  docstrings, ni en documentación;
-- artefactos de caso: base de datos, `ledger.key`, capturas WARC, dossiers;
-- claves de API.
+- Identifying information about real people (usernames, email addresses, phone
+  numbers, national ID numbers, or real target domains) in code, tests,
+  fixtures, docstrings, or documentation.
+- Case artifacts such as databases, ledger.key, WARC captures, or dossiers.
+- API keys or other credentials.
 
-Usa siempre ejemplos sintéticos y evidentemente ficticios. Los tests existentes
-son el modelo a seguir (`cmendozagarcia@ejemplo.test`). El
-[PULL_REQUEST_TEMPLATE](.github/PULL_REQUEST_TEMPLATE.md) lo pregunta de forma
-explícita.
+Use synthetic, clearly fictional examples. Existing tests are a model (for
+example, person@example.test). The
+[Pull Request template](.github/PULL_REQUEST_TEMPLATE.md) includes this check.
 
-## Convenciones
+## Conventions
 
-### Código Python (engine/)
+### Python code (engine/)
 
-- **Nombres**: el producto es **WraithOSINT**, pero el paquete Python del kernel
-  es `specter` (nombre interno del motor), igual que las variables de entorno
-  `SPECTER_*`. No los renombres a medias: si añades algo visible al usuario, usa
-  `Wraith`; si tocas el kernel, mantén `specter`. Ver la tabla de convención de
-  nombres en el [README](README.md#convención-de-nombres).
-- **Rutas**: siempre vía `specter.config` (`data_dir()`, `reports_dir()`,
-  `database_path()`). Nunca paths relativos al cwd ni resueltos en import-time.
-- **Tools forenses**: se definen una sola vez como decoradores MCP en
-  `specter/server.py`; los consumidores van a través de `engine/registry.py`.
-- **Tests**: aíslan almacenamiento con el fixture `engine_env` (tmp_path + env
-  vars) y sin red real. Los mocks de colectores van por el seam del collector.
-- Estilo: `line-length = 100`, imports ordenados por ruff, tipado moderno
-  (`list[str]`, `X | None`).
+- **Names:** The product is **WraithOSINT**, but the Python kernel package is
+  specter and environment variables use the SPECTER_* prefix. Do not partially
+  rename these. Use Wraith* for user-visible changes and keep specter for kernel
+  changes. See the naming table in the
+  [README](README.md#naming-convention).
+- **Paths:** Use specter.config (data_dir(), reports_dir(), database_path()).
+  Do not use paths relative to the current working directory or resolve them at
+  import time.
+- **Forensics tools:** Define tools once as MCP decorators in
+  specter/server.py; consumers should use engine/registry.py.
+- **Tests:** Isolate storage with the engine_env fixture (tmp_path and
+  environment variables) and avoid the real network. Collector mocks should
+  use the collector seam.
+- **Style:** 100-character line length, Ruff-sorted imports, modern type hints
+  (list[str], X | None).
 
-### Código TypeScript (packages/sdk, desktop)
+### TypeScript code (packages/sdk, desktop)
 
-- El **contrato del motor** vive en `@wraith/sdk`; la UI no llama a `fetch` a pelo.
-- El renderer habla con el engine por HTTP/SSE; el proceso main solo gestiona el
-  sidecar y APIs nativas (ver `desktop/src/preload`).
-- Componentes React: sin lógica de negocio; el estado del engine vive en el store
-  Zustand y llega por eventos del bus.
+- The engine contract lives in @wraith/sdk; the UI should not call fetch
+  directly.
+- The renderer talks to the engine over HTTP/SSE. The main process manages only
+  the sidecar and native APIs (see desktop/src/preload).
+- React components should not contain business logic. Engine state belongs in
+  the Zustand store and arrives through the event bus.
 
-### Commits y PRs
+### Commits and pull requests
 
-- Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
-  Ejemplo: `feat(engine): añade collector de whois histórico`.
-- Un PR = una intención. Describe el *porqué*, no solo el *qué*.
-- Si tocas arquitectura (transporte, storage, seguridad): escribe o actualiza un
-  [ADR](docs/adr/README.md) en el mismo PR.
+- Use Conventional Commits: feat:, fix:, docs:, refactor:, test:, chore:.
+  Example: feat(engine): add a historical WHOIS collector.
+- One pull request should have one purpose. Explain why the change is needed,
+  not only what it changes.
+- If you change architecture (transport, storage, security), add or update an
+  [ADR](docs/adr/README.md) in the same pull request.
 
-### Cobertura
+### Coverage
 
-La estrategia es **ratchet** (ver [ADR-004](docs/adr/adr-004-quality-ratchet.md)):
-los umbrales solo suben. Si tu PR baja la cobertura, añade tests; si el código es
-un test de relleno sin valor, propón en el PR qué cubrir en su lugar.
+Coverage follows a **ratchet** policy (see
+[ADR-004](docs/adr/adr-004-quality-ratchet.md)): thresholds only increase. If
+your pull request lowers coverage, add tests. If a test adds no meaningful
+coverage, explain in the pull request what should be covered instead.
 
-## Roadmap de calidad
+## Quality roadmap
 
-Las mejoras de cobertura y tests se planifican por fases en
-[ARCHITECTURE.md](ARCHITECTURE.md#roadmap). Antes de añadir un colector nuevo,
-revisa cómo están estructurados los existentes (`specter/collectors/base.py`).
+Coverage and test improvements are planned in
+[ARCHITECTURE.md](ARCHITECTURE.md#roadmap). Before adding a collector, review
+the structure of existing collectors in specter/collectors/base.py.
