@@ -112,6 +112,13 @@ jobs:
           name: engine-${{ matrix.target }}
           path: dist-engine
 
+      - name: Restaurar el permiso de ejecución del motor
+        # upload-artifact y download-artifact no conservan los permisos: sin esto el
+        # motor llegaría al instalador de macOS y Linux sin bit de ejecución y la app
+        # instalada no podría arrancarlo.
+        if: runner.os != 'Windows'
+        run: chmod +x dist-engine/wraith-engine
+
       - name: Instalar dependencias JS
         run: npm ci --no-audit --no-fund
         env:
