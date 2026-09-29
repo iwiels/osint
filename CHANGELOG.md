@@ -128,6 +128,12 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   raíz; sin encontrarlo abortaba con «Cannot compute electron version». Los cuatro
   instaladores del release fallaban ahí, y `npm run dist:*` en local también. El
   script `dist` pasa ahora la versión instalada (`desktop/scripts/dist.mjs`).
+- **electron-builder se borraba a sí mismo en un checkout limpio.** Sin
+  `desktop/node_modules` (los workspaces lo hoistean todo), ejecutaba
+  `npm install --production` en `desktop/`, que poda las devDependencies de la raíz,
+  incluido el propio electron-builder, y el empaquetado moría con
+  «spawn app-builder ENOENT». La app no tiene dependencias nativas, así que
+  `electron-builder.yml` fija `npmRebuild: false`.
 - Los paquetes de Linux se llaman `linux-x86_64.AppImage` y `linux-amd64.deb`
   (la convención de cada formato), no `linux-x64`: corregidos el README, las notas
   del release y la cabecera del workflow.
