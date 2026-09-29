@@ -602,6 +602,20 @@ async def case_attestation(case_id: str) -> dict[str, Any]:
     return ForensicLedger(db).attest_case(case_id)
 
 
+@app.post("/cases/{case_id}/ledger/reseal")
+async def reseal_case_ledger(case_id: str) -> dict[str, Any]:
+    """Migración de cadenas v1: reescribe hashes/firmas/cabeza al formato vigente.
+
+    Sólo re-sella cadenas que validaban antes (v1 o formato actual); una cadena
+    adulterada se rechaza con `code=CHAIN_INVALID_FOR_RESEAL`.
+    """
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    from specter.osint_core.ledger import ForensicLedger
+
+    return ForensicLedger(db).reseal_case_chain(case_id)
+
+
 # ------------------------------------------------------------------
 # Event Sourcing: eventos inmutables y replay de estado
 # ------------------------------------------------------------------

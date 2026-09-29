@@ -202,7 +202,19 @@ def test_clave_generada_despues_del_import_sigue_firmando(temp_db, sample_case, 
         case_id=sample_case.case_id, collector="analyst", action="SEÑAL_POST_CLAVE"
     )
     assert block.signature == compute_block_signature(block.block_hash, generated)
-    assert ledger.verify_case_integrity(sample_case.case_id)["signature_status"] == "PARTIAL"
+
+    # Con clave disponible, el bloque génesis sin firma NO es un "PARTIAL"
+    # tolerable: es inválido (borrar la firma no debe anular el HMAC). El
+    # reseal re-sella la cadena completa y la devuelve a SEALED.
+    audit = ledger.verify_case_integrity(sample_case.case_id)
+    assert audit["valid"] is False
+    assert audit["signature_status"] == "INVALID"
+    assert audit["missing_signature_blocks"] == [0]
+
+    assert ledger.reseal_case_chain(sample_case.case_id)["resealed"] is True
+    healed = ledger.verify_case_integrity(sample_case.case_id)
+    assert healed["valid"] is True
+    assert healed["signature_status"] == "SEALED"
 
 
 def test_ledger_without_key_reports_unsigned(temp_db, sample_case):

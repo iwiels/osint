@@ -194,6 +194,20 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_case_events_aggregate ON case_events(aggregate_id, seq);
                 CREATE INDEX IF NOT EXISTS idx_case_events_type ON case_events(type);
                 CREATE INDEX IF NOT EXISTS idx_case_events_timestamp ON case_events(timestamp);
+
+                -- Cabeza firmada de la cadena de custodia: ancla (índice, hash)
+                -- del último bloque legítimo. Sin ella, borrar los últimos
+                -- bloques deja una cadena autoconsistente que la verificación
+                -- daba por buena; con clave, la firma de la cabeza no se puede
+                -- rehacer, así que el truncamiento queda a la vista.
+                CREATE TABLE IF NOT EXISTS ledger_heads (
+                    case_id TEXT PRIMARY KEY,
+                    block_index INTEGER NOT NULL,
+                    block_hash TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    signature TEXT,
+                    FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+                );
                 """
             )
             # Migración incremental: bases creadas antes de la firma HMAC (fase B).
@@ -518,7 +532,13 @@ class Database:
 
     # --- Operaciones de Forensic Ledger ---
 
-    def insert_ledger_block(self, block: LedgerBlock) -> None:
+    def insert_ledger_block(self, block: LedgerBlock, head_signature: str | None = None) -> None:
+        """Inserta el bloque y actualiza la cabeza firmada en la MISMA transacción.
+
+        `head_signature` es la firma HMAC de la cabeza (la calcula quien tiene la
+        clave, `ForensicLedger`); una desconexión a mitad de escritura es
+        imposible: o se escribe bloque y cabeza, o no se escribe nada.
+        """
         with self.get_connection() as conn:
             conn.execute(
                 """
@@ -537,6 +557,64 @@ class Database:
                     block.block_hash,
                     block.signature,
                 ),
+            )
+            conn.execute(
+                """
+                INSERT INTO ledger_heads (case_id, block_index, block_hash, updated_at, signature)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(case_id) DO UPDATE SET
+                    block_index = excluded.block_index,
+                    block_hash = excluded.block_hash,
+                    updated_at = excluded.updated_at,
+                    signature = excluded.signature
+                """,
+                (block.case_id, block.block_index, block.block_hash, block.timestamp, head_signature),
+            )
+
+    def get_ledger_head(self, case_id: str) -> dict[str, Any] | None:
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM ledger_heads WHERE case_id = ?",
+                (case_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def reseal_ledger_chain(
+        self,
+        case_id: str,
+        rows: list[tuple[int, str, str, str | None]],
+        head_block_index: int,
+        head_block_hash: str,
+        head_updated_at: str,
+        head_signature: str | None,
+    ) -> None:
+        """Reescribe prev_hash/block_hash/firma de toda la cadena + cabeza en una transacción.
+
+        `rows` es [(block_index, prev_hash, block_hash, signature), ...] en
+        orden de cadena. Sólo lo usa `ForensicLedger.reseal_case_chain`, que
+        valida la cadena antes de llegar aquí.
+        """
+        with self.get_connection() as conn:
+            for block_index, prev_hash, block_hash, signature in rows:
+                conn.execute(
+                    """
+                    UPDATE forensic_ledger
+                    SET prev_hash = ?, block_hash = ?, signature = ?
+                    WHERE case_id = ? AND block_index = ?
+                    """,
+                    (prev_hash, block_hash, signature, case_id, block_index),
+                )
+            conn.execute(
+                """
+                INSERT INTO ledger_heads (case_id, block_index, block_hash, updated_at, signature)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(case_id) DO UPDATE SET
+                    block_index = excluded.block_index,
+                    block_hash = excluded.block_hash,
+                    updated_at = excluded.updated_at,
+                    signature = excluded.signature
+                """,
+                (case_id, head_block_index, head_block_hash, head_updated_at, head_signature),
             )
 
     def get_case_ledger(self, case_id: str) -> list[LedgerBlock]:
