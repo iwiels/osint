@@ -16,14 +16,23 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import type { PermissionRequestPayload } from "@wraith/sdk";
-import { useStore } from "./store.ts";
+import {
+  selectPendingPermissionForCase,
+  selectPendingQuestionForCase,
+  useStore,
+} from "./store.ts";
 
 const store = () => useStore.getState();
 
-const req = (request_id: string, tool: string): PermissionRequestPayload => ({
+const req = (
+  request_id: string,
+  tool: string,
+  case_id: string | null = null,
+): PermissionRequestPayload => ({
   request_id,
   tool,
   arguments: {},
+  case_id,
 });
 
 beforeEach(() => {
@@ -76,5 +85,24 @@ describe("permisos concurrentes no se pisan", () => {
 
     assert.equal(store().permissionQueue.length, 0);
     assert.equal(store().pendingPermission, null);
+  });
+
+  it("solo expone el permiso del expediente visible", () => {
+    const caseA = req("p-a", "investigate_domain", "case-a");
+    const caseB = req("p-b", "investigate_email", "case-b");
+
+    assert.equal(selectPendingPermissionForCase([caseA, caseB], "case-b"), caseB);
+    assert.equal(selectPendingPermissionForCase([caseA, caseB], null), null);
+  });
+
+  it("solo expone la pregunta pendiente del expediente visible", () => {
+    const question = {
+      request_id: "q-a",
+      questions: [],
+      case_id: "case-a",
+    };
+
+    assert.equal(selectPendingQuestionForCase(question, "case-a"), question);
+    assert.equal(selectPendingQuestionForCase(question, "case-b"), null);
   });
 });
