@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Attack Surface & Multi-Source Subdomain Reconnaissance Collector
+WraithOSINT - Attack Surface & Multi-Source Subdomain Reconnaissance Collector
 Agregación pasiva multi-fuente de subdominios, resolución DNS concurrente y validación de superficie de ataque.
 """
 

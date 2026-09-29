@@ -1,0 +1,52 @@
+version: 2
+updates:
+  # Dependencias JavaScript: raíz + workspaces (packages/sdk, desktop).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Un solo PR para todo lo menor/patch: revisar 30 PRs sueltos no escala.
+      npm-menor-y-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Dependencias Python del motor (requirements.txt del build PyInstaller).
+  - package-ecosystem: "pip"
+    directory: "/engine"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      pip-menor-y-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Entorno de desarrollo Python declarado en pyproject.toml (uv.lock).
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Las propias GitHub Actions: una action desactualizada es superficie de ataque.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]

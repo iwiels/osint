@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Tool Registry
+WraithOSINT - Tool Registry
 Registro dinámico de herramientas con materialización por permisos.
 
 Inspirado en OpenCode (packages/core/src/tool/): un catálogo de tools que

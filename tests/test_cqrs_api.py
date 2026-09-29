@@ -1,5 +1,5 @@
 """
-Tests para la API HTTP de CQRS de SpecterOSINT.
+Tests para la API HTTP de CQRS de WraithOSINT.
 """
 
 from __future__ import annotations

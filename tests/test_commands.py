@@ -1,5 +1,5 @@
 """
-Tests para los comandos CQRS de SpecterOSINT.
+Tests para los comandos CQRS de WraithOSINT.
 """
 
 from __future__ import annotations

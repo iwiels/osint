@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Snapshot Service
+WraithOSINT - Snapshot Service
 Servicio de snapshots del grafo forense con capacidad de captura,
 diff forense y revert en caso de corrupción o error.
 """

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Network & Infrastructure Collectors
+WraithOSINT - Network & Infrastructure Collectors
 Colectores de DNS, Certificate Transparency (crt.sh), inspección TLS/SSL y enriquecimiento IP/RDAP.
 """
 

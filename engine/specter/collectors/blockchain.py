@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Blockchain Collectors
+WraithOSINT - Blockchain Collectors
 Colectores para investigar direcciones de criptomonedas y reportes de abuso.
 
 Fuentes:
@@ -30,7 +30,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.blockchain")
 
 _TIMEOUT = 12.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+blockchain)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+blockchain)"}
 
 
 def _collector_key(vault_name: str) -> str | None:

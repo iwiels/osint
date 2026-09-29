@@ -1,11 +1,11 @@
-# Nota legal y de uso responsable — SpecterOSINT
+# Nota legal y de uso responsable — WraithOSINT
 
 > **Aviso**: este documento no es asesoramiento legal. Antes de publicar o usar
 > esta herramienta en una jurisdicción concreta, consultá con un abogado. Las
 > leyes citadas son referencias para orientar decisiones de diseño, no una
 > guía de cumplimiento exhaustiva.
 
-SpecterOSINT es una plataforma forense de fuentes abiertas (OSINT) para
+WraithOSINT es una plataforma forense de fuentes abiertas (OSINT) para
 investigadores de seguridad, periodistas, defensores de derechos humanos y
 abogados. Su propósito legítimo es documentar evidencia pública de forma
 reproducible y verificable. Este documento explica qué capacidades del motor

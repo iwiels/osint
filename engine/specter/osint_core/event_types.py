@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Event Types
+WraithOSINT - Event Types
 Definición de los tipos de eventos del dominio para Event Sourcing.
 
 Cada evento representa un hecho inmutable que ocurrió en el sistema. Los tipos

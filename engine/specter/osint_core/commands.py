@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Commands (CQRS)
+WraithOSINT - Commands (CQRS)
 Comandos que mutan estado: ejecutan colectores, resuelven entidades,
 actualizan el grafo, exportan reportes y gestionan casos.
 """

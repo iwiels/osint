@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Bóveda local de secretos
+WraithOSINT - Bóveda local de secretos
 Almacén de API keys del motor (no del renderer).
 
 Una key escrita en el ajuste del renderer acaba en el almacenamiento del

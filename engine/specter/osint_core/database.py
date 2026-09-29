@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Database Layer
+WraithOSINT - Database Layer
 Gestor de persistencia SQLite para casos, grafos y auditoría de evidencias.
 """
 

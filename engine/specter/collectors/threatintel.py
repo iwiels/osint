@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Threat Intel sin API key (Fase A Maltego-gap).
+WraithOSINT - Threat Intel sin API key (Fase A Maltego-gap).
 
 Fuentes gratuitas sin autenticación, las mismas que usan SpiderFoot,
 theHarvester y las máquinas de Maltego CE como pivotes iniciales:
@@ -38,7 +38,7 @@ logger = logging.getLogger("specter.collectors.threatintel")
 
 _TIMEOUT = 12.0
 # ASCII estricto: httpx codifica los headers en ASCII y una tilde tumba el request.
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+forense, key en boveda local)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+forense, key en boveda local)"}
 
 
 def _collector_key(vault_name: str) -> str | None:

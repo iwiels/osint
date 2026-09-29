@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Runtime Configuration
+WraithOSINT - Runtime Configuration
 Única fuente de verdad para rutas de filesystem del motor.
 
 Prioridad de resolución:

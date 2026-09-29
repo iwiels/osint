@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Web Spider Collector
+WraithOSINT - Web Spider Collector
 Crawling automático de páginas del target con extracción de entidades.
 """
 
@@ -26,7 +26,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.web_spider")
 
 _TIMEOUT = 15.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+forense, web spider)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+forense, web spider)"}
 
 # Extensiones de archivos binarios a ignorar
 _BINARY_EXTENSIONS = frozenset(

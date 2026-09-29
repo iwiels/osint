@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Projections (CQRS)
+WraithOSINT - Projections (CQRS)
 Vistas materializadas del estado: grafo, timeline y correlaciones.
 Se reconstruyen desde eventos y se actualizan incrementalmente.
 """

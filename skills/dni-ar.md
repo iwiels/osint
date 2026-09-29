@@ -1,7 +1,8 @@
 # Playbook: DNI argentino suelto (7-8 dígitos sin letra)
 
-Úsalo cuando el objetivo sea un número como `99999999` y `triage_entity` lo
-clasifique como `DOCUMENT_ID`. Un DNI por sí solo es un identificador
+Úsalo cuando el objetivo sea un número como `99999999` (DNI ficticio de
+ejemplo: usa siempre números sintéticos en documentación y tests) y
+`triage_entity` lo clasifique como `DOCUMENT_ID`. Un DNI por sí solo es un identificador
 administrativo, no digital: el objetivo es derivar pivotes buscables o
 cerrar con NO-ATRIBUCIÓN honesta (nunca inventar una persona).
 
@@ -25,10 +26,11 @@ en padrones, facturas y designaciones indexadas. Prefijos: `20` (masc.),
    `23` (recalcula).
 4. Repite para `20` y `27` (y `23` si aplica): obtienes 2-3 CUIT candidatos.
 
-Ejemplo: DNI `99999999` → `20-99999999-?` y `27-99999999-?` (calcúlalos,
-no los adivines). Luego **una sola** llamada a `parallel_search` con:
+Ejemplo: DNI `99999999` → prefijo `23` da `23-99999999-9` y prefijo `27` da
+`27-99999999-4`; el prefijo `20` se descarta porque su dígito da `10` (paso 3).
+Calcúlalos, no los adivines. Luego **una sola** llamada a `parallel_search` con:
 
-- `"20-99999999-3"` (cada CUIT candidato entre comillas)
+- `"23-99999999-9"` y `"27-99999999-4"` (cada CUIT candidato entre comillas)
 - `"99999999" (site:boletinoficial.gob.ar | site:infoleg.gob.ar)`
 - `"99999999" (site:pjn.gov.ar | site:argentina.gob.ar)`
 

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - High-Performance Persistent Cache Layer
+WraithOSINT - High-Performance Persistent Cache Layer
 Capa de caché de alta concurrencia y persistencia basada en diskcache (SQLite + WAL).
 Thread-safe y process-safe con soporte TTL y decorador para colectores sync y async.
 """

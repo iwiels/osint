@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Cronolocalización (P1): acotar el instante de captura de una
+WraithOSINT - Cronolocalización (P1): acotar el instante de captura de una
 foto a partir de su sombra, según la metodología de verificación de UGC del
 Protocolo de Berkeley y las guías de geolocalización de Bellingcat.
 

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Correlation Engine
+WraithOSINT - Correlation Engine
 Correlación de artefactos entre casos y resolución de identidades.
 
 Tres capacidades, todas explicables (cada resultado lleva su motivo y score):

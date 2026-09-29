@@ -17,19 +17,26 @@ let engineBaseUrl = "http://127.0.0.1:8787";
 /** Bearer del engine (generado por el sidecar por arranque; C1). */
 let engineToken = "";
 
-/** Carpeta de dossiers: el IPC reveal solo abre rutas bajo este árbol (A5). */
+/** Carpeta de dossiers: el IPC reveal solo abre rutas bajo este árbol (A5).
+ *
+ * Debe coincidir con el `SPECTER_REPORTS_DIR` que el sidecar le pasa al motor
+ * (`app.getPath("userData")/reports`). Resolverlo a mano con `%APPDATA%` daba
+ * una ruta distinta a la del motor en Windows y una ruta dentro del bundle
+ * (solo lectura) en macOS y Linux, de modo que el reveal nunca encontraba nada.
+ */
 function reportsDir(): string {
   if (!app.isPackaged) return path.resolve(__dirname, "../../..", "reports");
-  const base = process.env.APPDATA || path.dirname(process.execPath);
-  return path.join(base, "wraith-osint", "reports");
+  return path.join(app.getPath("userData"), "reports");
 }
 
 const isDev = !app.isPackaged;
 
 // Forense de crashes: sin esto, un 0xC0000005 del proceso principal muere sin
-// dejar rastro (ni WER ni dump). Con dumpDir, Chromium escribe un .dmp en
-// %APPDATA%/wraith-desktop/crash-dumps y el dump nombra el módulo exacto.
-app.setPath("crashDumps", path.join(app.getPath("appData"), "wraith-desktop", "crash-dumps"));
+// dejar rastro (ni WER ni dump). Con dumpDir, Chromium escribe un .dmp en el
+// directorio de datos del usuario y el dump nombra el módulo exacto.
+// Se usa app.getPath("userData") —no una carpeta hardcodeada— para que la ruta
+// sea la misma en las tres plataformas que la que usa el sidecar del motor.
+app.setPath("crashDumps", path.join(app.getPath("userData"), "crash-dumps"));
 try {
   fs.mkdirSync(app.getPath("crashDumps"), { recursive: true });
 } catch {

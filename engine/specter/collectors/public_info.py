@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Public Information Collectors
+WraithOSINT - Public Information Collectors
 Fuentes de información pública para enriquecimiento forense.
 
 - PasteBinSearchCollector: búsqueda de pastes relacionados con un dominio/email.
@@ -30,7 +30,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.public_info")
 
 _TIMEOUT = 15.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+forense, key en boveda local)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+forense, key en boveda local)"}
 
 # Patrones de proveedores de hosting conocidos
 _HOSTING_PATTERNS: dict[str, tuple[str, ...]] = {

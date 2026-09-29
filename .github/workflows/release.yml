@@ -1,10 +1,10 @@
 name: Release
 
 # Empaqueta los instaladores de las tres plataformas al crear un tag vX.Y.Z.
-# Artefactos por plataforma:
-#   Windows → SpecterOSINT-<ver>-win-x64-setup.exe
-#   macOS   → SpecterOSINT-<ver>-mac-<arch>.dmg / .zip
-#   Linux   → SpecterOSINT-<ver>-linux-x64.AppImage / .deb
+# Artefactos publicados:
+#   Windows → WraithOSINT-<ver>-win-x64-setup.exe
+#   macOS   → WraithOSINT-<ver>-mac-x64.dmg / .zip  y  ...-mac-arm64.dmg / .zip
+#   Linux   → WraithOSINT-<ver>-linux-x64.AppImage / .deb
 on:
   push:
     tags: ["v*"]
@@ -14,16 +14,33 @@ permissions:
 
 jobs:
   # ------------------------------------------------------------------
-  # El binario del motor se compila en cada plataforma: PyInstaller no
-  # cross-compila, así que cada runner produce su propio ejecutable.
+  # El binario del motor se compila en cada plataforma y arquitectura:
+  # PyInstaller NO cross-compila, así que cada runner produce su propio
+  # ejecutable. macOS necesita dos (Intel y Apple Silicon) porque el motor
+  # viaja dentro del .app y no puede ser de otra arquitectura que la app.
+  #
+  # NOTA sobre runners de macOS: `macos-latest` es Apple Silicon (arm64) y
+  # `macos-15-intel` es Intel (x64). Si GitHub renombra la etiqueta Intel,
+  # basta con actualizar (o borrar) esas dos entradas del matrix: el resto
+  # del release sigue igual. Consulta la lista vigente en
+  # https://docs.github.com/actions/using-github-hosted-runners
   # ------------------------------------------------------------------
   engine:
-    name: Engine binario (${{ matrix.os }})
+    name: Motor (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            target: win-x64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: macos-15-intel # Intel → binario x64
+            target: mac-x64
+          - os: macos-latest # Apple Silicon → binario arm64
+            target: mac-arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -33,88 +50,106 @@ jobs:
           cache: pip
           cache-dependency-path: engine/requirements.txt
 
-      - name: Install engine deps + PyInstaller
+      - name: Instalar dependencias + PyInstaller
         run: |
           python -m pip install --upgrade pip
           pip install -r engine/requirements.txt pyinstaller
 
-      - name: Build engine executable
+      - name: Compilar binario del motor
         run: python scripts/build-engine.py
 
-      - name: Upload engine artifact
+      - name: Subir binario del motor
         uses: actions/upload-artifact@v4
         with:
-          name: specter-engine-${{ matrix.os }}
-          path: dist-engine/specter-engine*
+          name: engine-${{ matrix.target }}
+          # El nombre real del binario es wraith-engine(.exe): si el script
+          # cambia de nombre, esto falla en vez de publicar un instalador
+          # sin motor dentro.
+          path: dist-engine/wraith-engine*
+          if-no-files-found: error
 
+  # ------------------------------------------------------------------
+  # Un job por plataforma y arquitectura: cada uno baja el motor que le
+  # corresponde y empaqueta un único instalador con esa arquitectura.
+  # ------------------------------------------------------------------
   desktop:
-    name: Instalador (${{ matrix.os }})
+    name: Instalador (${{ matrix.target }})
     needs: engine
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            dist: --win
-          - os: macos-latest
-            dist: --mac
+            target: win-x64
+            dist: --win --x64
           - os: ubuntu-latest
-            dist: --linux
+            target: linux-x64
+            dist: --linux --x64
+          - os: macos-15-intel
+            target: mac-x64
+            dist: --mac --x64
+          - os: macos-latest
+            target: mac-arm64
+            dist: --mac --arm64
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
-      - name: Download engine binary
+      - name: Descargar el binario del motor
         uses: actions/download-artifact@v4
         with:
-          name: specter-engine-${{ matrix.os }}
+          name: engine-${{ matrix.target }}
           path: dist-engine
 
-      - name: Install JS deps
-        run: npm install --no-audit --no-fund
+      - name: Instalar dependencias JS
+        run: npm ci --no-audit --no-fund
         env:
           SPECTER_SKIP_ENGINE_SETUP: "1"
 
-      - name: Build desktop app
+      - name: Build de producción del desktop
         run: npm run build
 
-      - name: Package installer
+      - name: Empaquetar instalador
         run: npm run dist --workspace desktop -- ${{ matrix.dist }}
         env:
-          # Sin token de publicación; artifacts solo al GitHub Release
+          # Electron-builder publica vía GitHub Releases con este token.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload installers
+      - name: Subir instaladores
         uses: actions/upload-artifact@v4
         with:
-          name: installers-${{ matrix.os }}
+          name: installers-${{ matrix.target }}
           path: |
             desktop/release/*.exe
             desktop/release/*.dmg
             desktop/release/*.zip
             desktop/release/*.AppImage
             desktop/release/*.deb
-          if-no-files-found: warn
+          # Un instalador que no se generó es un release roto, no un aviso.
+          if-no-files-found: error
 
   release:
     name: Publicar release
     needs: desktop
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Download all installers
+      - name: Descargar todos los instaladores
         uses: actions/download-artifact@v4
         with:
           pattern: installers-*
           merge-multiple: true
           path: release-assets
 
-      - name: Publish to GitHub Release
+      - name: Publicar en GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
           generate_release_notes: true
+          draft: false

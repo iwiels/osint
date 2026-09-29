@@ -1,0 +1,42 @@
+# Normalización de finales de línea para un proyecto multiplataforma.
+#
+# Sin esto, un contribuyente en Windows con `core.autocrlf=true` y otro en
+# Linux escriben el mismo fichero con bytes distintos, y el diff se llena de
+# ruido. `text=auto` deja que Git detecte los ficheros de texto y `eol=lf`
+# fuerza LF en el árbol de trabajo en todas las plataformas: es lo que esperan
+# Ruff, ESLint, Prettier y las herramientas de Node.
+#
+# Regla adicional: los ficheros de texto NO llevan BOM. Ruff lo elimina y
+# `ruff format --check` falla si aparece uno (ver CONTRIBUTING.md).
+* text=auto eol=lf
+
+# Binarios: nunca normalizar.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.dmp binary
+
+# Ficheros que Git debe tratar siempre como texto aunque su extensión engañe.
+*.md text
+*.json text
+*.yml text
+*.yaml text
+*.toml text
+
+# Los lockfiles se generan: no ensuciar los diffs de revisión ni de merge.
+package-lock.json -diff linguist-generated
+uv.lock -diff linguist-generated

@@ -5,7 +5,7 @@
 
 ## Contexto
 
-SpecterOSINT era un kernel forense Python maduro (ledger SHA-256, grafo NetworkX,
+WraithOSINT era un kernel forense Python maduro (ledger SHA-256, grafo NetworkX,
 10 colectores, 15 tools MCP) cuya interfaz dependía de OpenCode. Para convertirse en
 plataforma desktop independiente había dos caminos: reescribir todo en TypeScript
 dentro de Electron, o mantener el kernel como proceso separado.

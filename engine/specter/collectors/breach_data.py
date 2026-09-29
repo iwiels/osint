@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Breach Data Collectors
+WraithOSINT - Breach Data Collectors
 Colectores de brechas de datos y fugas de información:
 
 - HaveIBeenPwnedCollector: HIBP (requiere key, patrón _collector_key)
@@ -43,7 +43,7 @@ __all__ = [
 logger = logging.getLogger("specter.collectors.breach_data")
 
 _TIMEOUT = 12.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+breach-data)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+breach-data)"}
 
 
 def _collector_key(vault_name: str) -> str | None:

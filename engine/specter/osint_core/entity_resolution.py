@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Resolución de entidades probabilística (Fellegi-Sunter).
+WraithOSINT - Resolución de entidades probabilística (Fellegi-Sunter).
 
 Modelo clásico de enlace de registros (Fellegi & Sunter, 1969) tal como lo
 implementa Splink: cada par de registros (A, B) produce un vector de

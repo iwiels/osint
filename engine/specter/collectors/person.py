@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Person Investigator
+WraithOSINT - Person Investigator
 Huella digital de un nombre completo, 100% pasiva (solo fuentes públicas indexadas).
 
 Estrategia por capas:

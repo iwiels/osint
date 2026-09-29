@@ -1,10 +1,14 @@
 {
-  "name": "specter-osint",
-  "version": "0.2.0",
+  "name": "wraith-osint",
+  "version": "0.3.0",
   "private": true,
-  "description": "SpecterOSINT - Forensic Intelligence Platform (Electron desktop + Python engine)",
+  "description": "WraithOSINT - Plataforma forense de inteligencia OSINT (desktop Electron + motor Python)",
   "license": "MIT",
   "author": "iwiels",
+  "homepage": "https://github.com/iwiels/osint#readme",
+  "bugs": {
+    "url": "https://github.com/iwiels/osint/issues"
+  },
   "keywords": [
     "osint",
     "forensics",
@@ -19,6 +23,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/iwiels/osint.git"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "workspaces": [
     "packages/sdk",

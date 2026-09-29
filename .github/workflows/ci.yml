@@ -5,25 +5,37 @@ on:
     branches: [main]
   pull_request:
 
-# Cancela builds obsoletos de la misma rama
+# Cancela builds obsoletos de la misma rama.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Mínimo privilegio: la CI solo lee el repositorio.
+permissions:
+  contents: read
+
 jobs:
   engine:
-    name: Engine (Python)
+    name: Motor (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 es el suelo que declara pyproject.toml; 3.12 es la versión con la
+        # que se compilan los binarios de release. Se verifican ambas para que
+        # el rango soportado no sea una promesa sin comprobar.
+        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: engine/requirements.txt
 
-      - name: Install engine deps
+      - name: Instalar dependencias del motor
         run: |
           python -m pip install --upgrade pip
           pip install -r engine/requirements.txt pytest pytest-cov ruff
@@ -44,20 +56,28 @@ jobs:
         run: python scripts/gen_sdk_types.py --check
 
   web:
-    name: SDK + Desktop (TypeScript)
+    name: SDK + Desktop (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node }}
           cache: npm
 
-      - name: Install JS deps
-        run: npm install --no-audit --no-fund
+      - name: Instalar dependencias JS
+        # `npm ci` exige que package-lock.json esté sincronizado con los
+        # package.json: si alguien añade una dependencia y olvida el lock, la CI
+        # falla aquí en vez de resolver versiones distintas a las del resto.
+        run: npm ci --no-audit --no-fund
         env:
-          SPECTER_SKIP_ENGINE_SETUP: "1" # el engine tiene su propio job
+          SPECTER_SKIP_ENGINE_SETUP: "1" # el motor tiene su propio job
 
       - name: Typecheck
         run: npm run typecheck
@@ -66,8 +86,8 @@ jobs:
         # Gate de accesibilidad del design system: sin dependencias, solo Node.
         run: npm run a11y:contrast
 
-      - name: SDK tests + coverage gate
+      - name: Tests del SDK + coverage gate
         run: npm test
 
-      - name: Desktop build
+      - name: Build de producción del desktop
         run: npm run build

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Triage de artefactos
+WraithOSINT - Triage de artefactos
 Clasifica un artefacto crudo y recomienda la tool de investigación correcta.
 Lo usa la tool MCP `triage_entity` (entrada libre del analista o del agente).
 """

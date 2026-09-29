@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Identificación de tecnología web (frameworks, servidores, headers, cookies, errores).
+WraithOSINT - Identificación de tecnología web (frameworks, servidores, headers, cookies, errores).
 
 Inspirado en SpiderFoot: sfp_webframework, sfp_webserver, sfp_strangeheaders,
 sfp_cookie, sfp_errors. Adaptado a la arquitectura desktop.
@@ -25,7 +25,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.web_tech")
 
 _TIMEOUT = 15.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+identificacion de tecnologia)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+identificacion de tecnologia)"}
 
 # Headers estándar (para detectar los no estándar)
 _STANDARD_HEADERS = {

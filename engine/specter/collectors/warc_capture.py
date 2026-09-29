@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Cosechador WARC (archivo web reproducible, ISO 28500).
+WraithOSINT - Cosechador WARC (archivo web reproducible, ISO 28500).
 
 Una captura WARC conserva las solicitudes y respuestas HTTP observadas por
 Chromium para su posterior replay en ReplayWeb.page o pywb. Es un archivo de
@@ -280,9 +280,9 @@ class WarcCapture:
         buffer = io.BytesIO()
         writer = WARCWriter(buffer, gzip=True)
         info = writer.create_warcinfo_record(
-            "specter-osint.warc",
+            "wraith-osint.warc",
             {
-                "software": "SpecterOSINT engine (warcio + Chromium CDP)",
+                "software": "WraithOSINT engine (warcio + Chromium CDP)",
                 "format": "WARC file version 1.1",
                 "created": _now_warc(),
             },

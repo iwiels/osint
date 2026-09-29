@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Ritmo de recolección (jitter anti-bloqueo + proxies).
+WraithOSINT - Ritmo de recolección (jitter anti-bloqueo + proxies).
 
 - jitter_sleep: pausas gaussianas entre ráfagas (nada de intervalos fijos,
   que delatan automatización ante WAF/rate-limits).

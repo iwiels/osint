@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Search Engine Collectors
+WraithOSINT - Search Engine Collectors
 Colectores de motores de búsqueda y código (todos gratuitos, sin API key):
 
 - DuckDuckGoCollector: búsqueda HTML gratuita (títulos, URLs, snippets)
@@ -31,7 +31,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.search_engines")
 
 _TIMEOUT = 12.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+search-engines)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+search-engines)"}
 
 
 class _BingResultsParser(HTMLParser):

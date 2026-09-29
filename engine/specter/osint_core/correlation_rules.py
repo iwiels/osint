@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Correlation Rules Engine
+WraithOSINT - Correlation Rules Engine
 Motor de correlaciones declarativas inspirado en SpiderFoot.
 
 Las reglas se definen en YAML y se ejecutan contra la base de datos.

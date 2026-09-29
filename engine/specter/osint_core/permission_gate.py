@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Permission Gate
+WraithOSINT - Permission Gate
 Motor de permisos con wildcards para control de acceso a herramientas y recursos.
 
 Inspirado en OpenCode pero adaptado a la arquitectura Python/FastAPI del proyecto.

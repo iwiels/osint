@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Threat Intelligence Enhanced Collectors
+WraithOSINT - Threat Intelligence Enhanced Collectors
 Colectores avanzados con soporte para degradación elegante y calificación OTAN (Almirantazgo):
 - ShodanCollector (API completa o fallback automático a Shodan InternetDB sin key)
 - CensysCollector (Inspección de hosts, servicios y certificados SSL/TLS)
@@ -31,7 +31,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.threatintel_enhanced")
 
 _TIMEOUT = 12.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+threatintel-enhanced)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+threatintel-enhanced)"}
 
 
 def _collector_key(vault_name: str) -> str | None:

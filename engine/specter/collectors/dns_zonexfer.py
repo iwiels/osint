@@ -1,5 +1,5 @@
 """
-SpecterOSINT - DNS Zone Transfer Collector
+WraithOSINT - DNS Zone Transfer Collector
 Intenta transferencia de zona DNS (AXFR) contra los nameservers del dominio.
 """
 

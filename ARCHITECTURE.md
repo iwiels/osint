@@ -1,4 +1,4 @@
-# SpecterOSINT — Arquitectura
+# WraithOSINT — Arquitectura
 
 > Plataforma forense OSINT de escritorio. Motor Python headless + consola Electron.
 > Inspirada en la arquitectura cliente/servidor de [opencode](https://github.com/sst/opencode).
@@ -7,14 +7,14 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    SpecterOSINT Desktop (.exe NSIS)               │
+│                    WraithOSINT Desktop (.exe NSIS)                │
 │                                                                  │
 │  ┌──────────────────┐  spawn   ┌───────────────────────────────┐ │
-│  │ Electron Main    │─────────▶│  specter-engine.exe (sidecar) │ │
+│  │ Electron Main    │─────────▶│  wraith-engine.exe (sidecar)  │ │
 │  │ - ventana        │  :8787   │  Python + FastAPI + uvicorn   │ │
 │  │ - ciclo de vida  │◀─────────│  - /health  /tools  /cases    │ │
 │  │ - taskkill árbol │  REST+SSE│  - /agent/run  /events (SSE)  │ │
-│  │ - token Bearer   │  +Bearer │  - registry MCP (40 tools)    │ │
+│  │ - token Bearer   │  +Bearer │  - registry MCP (47 tools)    │ │
 │  └────────┬─────────┘          │  - ledger HMAC-SHA256 + grafo │ │
 │           │ contextBridge      └───────────────────────────────┘ │
 │           ▼                                                       │
@@ -30,7 +30,7 @@
 1. **Motor headless, clientes tontos.** El motor (kernel forense) vive en su propio
    proceso y expone una API HTTP local. Electron, el CLI, OpenCode (MCP) o un script
    son solo clientes. Nada de lógica de negocio en la UI.
-2. **Registry único de tools.** Las 41 tools forenses MCP se registran una vez y se
+2. **Registry único de tools.** Las 47 tools forenses MCP se registran una vez y se
    consumen desde tres superficies: UI (REST), agente IA (function-calling) y clientes
    MCP externos (stdio, compatibilidad legada).
    Entre ellas, el navegador sigiloso OSINT (`browser_snapshot`, `browser_screenshot`,
@@ -61,13 +61,13 @@
 ## Estructura del monorepo
 
 ```
-specter-osint/
+wraith-osint/
 ├── engine/                     # MOTOR PYTHON (sidecar headless)
 │   ├── http_server.py          #   FastAPI: REST + SSE + agent endpoints
 │   ├── agent.py                #   loop agente multi-provider + permissions
 │   ├── registry.py             #   acceso unificado al registro MCP
-│   └── specter/                #   KERNEL FORENSE (inalterado, antes src/)
-│       ├── server.py           #     40 tools MCP (create_case, investigate_*…)
+│   └── specter/                #   KERNEL FORENSE (codename interno del motor)
+│       ├── server.py           #     47 tools MCP (create_case, investigate_*…)
 │       ├── osint_core/         #     Database (SQLite/WAL), Graph (NetworkX),
 │       │                       #     ForensicLedger (SHA-256), models (Pydantic),
 │       │                       #     entity_resolution (Fellegi-Sunter), admiralty
@@ -78,8 +78,8 @@ specter-osint/
 │       ├── httpx_transport.py  #     transporte curl_cffi con impersonación TLS Chrome
 │       └── visualizer/         #     Dossier HTML autónomo + Markdown
 ├── packages/
-│   └── sdk/                    # @specter/sdk — cliente TypeScript tipado
-│       ├── src/index.ts        #   SpecterClient (HTTP tipado)
+│   └── sdk/                    # @wraith/sdk — cliente TypeScript tipado
+│       ├── src/index.ts        #   WraithClient (HTTP tipado)
 │       ├── src/types.ts        #   dominio espejo de los modelos Pydantic
 │       └── src/sse.ts          #   cliente del event bus
 ├── desktop/                    # APP ELECTRON
@@ -96,7 +96,7 @@ specter-osint/
 │           └── ErrorBoundary.tsx #   frontera de error: un panel caído no tumba la app
 ├── scripts/
 │   ├── postinstall.js          #   prepara venv del engine
-│   ├── build-engine.py         #   PyInstaller → dist-engine/specter-engine.exe
+│   ├── build-engine.py         #   PyInstaller → dist-engine/wraith-engine.exe
 │   └── smoke_http.py           #   test E2E del engine HTTP
 ├── docs/
 │   ├── adr/                    #   decisiones de arquitectura (ADRs)
@@ -105,7 +105,7 @@ specter-osint/
 ├── data/                       #   RUNTIME (no versionado): specter_osint.db,
 │                              #   ledger.key, cache/ y wmn-data.json
 ├── reports/                    #   RUNTIME (no versionado): dossiers generados
-└── tests/                      #   pytest (kernel+agente) — 37 ficheros verdes
+└── tests/                      #   pytest (kernel+agente) — 70 ficheros verdes
 ```
 
 ## Flujos clave
@@ -113,10 +113,10 @@ specter-osint/
 ### 1. Arranque de la app (producción)
 
 ```
-usuario abre SpecterOSINT.exe
+usuario abre WraithOSINT.exe
   └─ main process: EngineSidecar.start()
        ├─ probe http://127.0.0.1:8787/health (¿ya corre?)
-       ├─ spawn resources/engine/specter-engine.exe --port 8787
+       ├─ spawn resources/engine/wraith-engine.exe --port 8787
        └─ waitForHealth (reintentos ~15s)
   └─ BrowserWindow carga renderer con ?engine=http://127.0.0.1:8787
   └─ renderer: health-check + subscribe SSE + carga de casos
@@ -149,7 +149,7 @@ Cada acción de colector añade un bloque al ledger: `SHA-256(prev_hash + payloa
 
 | Decisión | Alternativa descartada | Motivo |
 |---|---|---|
-| Python como sidecar | Reescribir kernel en TS | El kernel forense (ledger, NetworkX, 10 colectores) está probado; reescribir = meses de riesgo. Mismo patrón que opencode: motor separado del cliente. |
+| Python como sidecar | Reescribir kernel en TS | El kernel forense (ledger, NetworkX, colectores) está probado; reescribir = meses de riesgo. Mismo patrón que opencode: motor separado del cliente. |
 | HTTP+FastAPI (no stdio) | Solo MCP stdio | SSE en vivo, multi-cliente, debuggable con curl; stdio MCP sigue disponible por compatibilidad. |
 | Registry MCP interno | Duplicar definiciones de tools | Una sola fuente de verdad: las tools se definen en `specter/server.py` con decoradores (`/tools` y `/health.mcp_tools` lo confirman en vivo). |
 | Grafo canvas (force-graph) | Cytoscape.js/d3/SVG propio | Canvas con simulación de fuerzas para cientos de nodos; la tabla del ledger queda como alternativa textual. |
@@ -172,7 +172,7 @@ adaptada a React + Tailwind v4 + zustand:
   semánticos por rol) y `styles/theme.css` (tipografía, radios, sombras); el mapeo a
   utilidades de Tailwind vive en `styles/tailwind.css` (`@theme`, con la paleta por defecto
   desactivada: si un color no está en el sistema, no existe).
-- **Estado de UI** en `store.ts` (zustand) por dominio; el engine se toca siempre vía `@specter/sdk`.
+- **Estado de UI** en `store.ts` (zustand) por dominio; el engine se toca siempre vía `@wraith/sdk`.
 - **Layout chat-first**: raíl de casos (`Sidebar`: expedientes + conversaciones con buscador y borrado) | chat central (`AgentConsole`, máx. 840px)
   | panel de evidencias (`CaseView`, 540px plegable con Ctrl+J). Una sola navegación por tabs WCAG en el header (Chat/Grafo/Timeline/Correlaciones/Custodia, con conteos y atajos Ctrl+1..5); las vistas de evidencia se manejan por prop (`hideTabs`), sin tab-bars duplicados. El chat funciona sin
   caso activo (runs globales); el token Bearer del engine llega por IPC, nunca en la URL.

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Threat Intel gratuitos adicionales (Fase A extendida).
+WraithOSINT - Threat Intel gratuitos adicionales (Fase A extendida).
 
 Fuentes gratuitas sin API key (excepto AbuseIPDB que es opcional):
 - AlienVaultOTX: pulsos, malware y URLs asociadas a un dominio
@@ -34,7 +34,7 @@ from specter.osint_core.models import (
 logger = logging.getLogger("specter.collectors.threatintel_free")
 
 _TIMEOUT = 12.0
-_UA = {"User-Agent": "SpecterOSINT/0.2 (+threatintel-free)"}
+_UA = {"User-Agent": "WraithOSINT/0.3 (+threatintel-free)"}
 
 
 def _collector_key(vault_name: str) -> str | None:

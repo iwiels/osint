@@ -63,7 +63,7 @@ async def test_events_stream_emits_published_event(engine) -> None:
     engine.bus.publish("case.created", {"case_id": "case-x", "name": "n"})
     await asyncio.wait_for(task, timeout=5)
 
-    assert any(b"specter-engine-sse" in c for c in received)
+    assert any(b"wraith-engine-sse" in c for c in received)
     assert any(b"case-x" in c for c in received)
 
 

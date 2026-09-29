@@ -1,1 +1,1 @@
-"""SpecterOSINT Package"""
+"""WraithOSINT Package"""

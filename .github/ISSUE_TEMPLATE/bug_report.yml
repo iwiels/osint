@@ -1,0 +1,90 @@
+name: 🐛 Reporte de bug
+description: Algo no funciona como debería
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por tomarte el tiempo de reportar.
+
+        > [!WARNING]
+        > **No pegues datos de una investigación real.** Nada de dossiers,
+        > capturas WARC, contenidos de `data/`, claves del ledger ni
+        > identificadores de personas. Si hace falta un ejemplo, invéntalo.
+
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: Qué pasa
+      description: Descripción clara y concisa del problema.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Cómo reproducirlo
+      description: Pasos mínimos. Cuanto más corto, antes se puede arreglar.
+      placeholder: |
+        1. Abrir la app con `npm run dev`
+        2. Crear un caso
+        3. Ejecutar el colector X sobre `ejemplo.test`
+        4. Ver el error en la consola
+    validations:
+      required: true
+
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Qué esperabas que pasara
+    validations:
+      required: true
+
+  - type: dropdown
+    id: plataforma
+    attributes:
+      label: Plataforma
+      multiple: true
+      options:
+        - Windows
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: instalacion
+    attributes:
+      label: Cómo lo ejecutas
+      options:
+        - Instalador de release
+        - Desde el código fuente (`npm run dev`)
+        - Solo el motor (`python -m engine.http_server`)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Versión
+      description: La release (p. ej. `v0.3.0`) o el commit si vas desde fuente.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs relevantes
+      description: Salida de consola del motor o de la app, **con los datos sensibles redactados**.
+      render: shell
+
+  - type: checkboxes
+    id: comprobaciones
+    attributes:
+      label: Comprobaciones
+      options:
+        - label: He buscado en los issues existentes y no está duplicado.
+          required: true
+        - label: He redactado cualquier dato personal o de caso real del reporte.
+          required: true

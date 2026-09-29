@@ -1,5 +1,5 @@
 """
-SpecterOSINT - Graph Analytics Engine
+WraithOSINT - Graph Analytics Engine
 Motor de grafos basado en NetworkX con cálculo de métricas de inteligencia y centralidad.
 """
 

@@ -1,5 +1,5 @@
 """
-SpecterOSINT - CLI & Demo Runner
+WraithOSINT - CLI & Demo Runner
 Herramienta de línea de comandos para demostraciones, auditorías forenses y ejecución directa.
 """
 
@@ -21,7 +21,7 @@ from specter.server import (
 
 async def run_demo():
     print("=" * 70)
-    print("🛡️  INICIANDO DEMOSTRACIÓN FORENSE SPECTEROSINT")
+    print("🛡️  INICIANDO DEMOSTRACIÓN FORENSE WraithOSINT")
     print("=" * 70)
 
     target_domain = "example.com"

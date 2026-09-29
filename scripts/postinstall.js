@@ -21,13 +21,13 @@ function main() {
   // (a menudo no existe un "python" a secas). Se prueba el primero que responda.
   const python = ["python", "python3", "py"].find(tryPython);
   if (!python) {
-    console.warn("[specter] Python 3.11+ no encontrado; omitiendo setup del engine.");
+    console.warn("[wraith] Python 3.11+ no encontrado; omitiendo setup del engine.");
     return;
   }
 
   const venvDir = path.join(ENGINE_DIR, ".venv");
   if (!fs.existsSync(venvDir)) {
-    console.log("[specter] Creando venv del engine...");
+    console.log("[wraith] Creando venv del engine...");
     execSync(`${python} -m venv "${venvDir}"`, { stdio: "inherit" });
   }
 
@@ -39,11 +39,11 @@ function main() {
     "-r",
     path.join(ENGINE_DIR, "requirements.txt"),
   ];
-  console.log("[specter] Instalando dependencias del engine...");
+  console.log("[wraith] Instalando dependencias del engine...");
   try {
     execSync(`${python} ${pipArgs.join(" ")}`, { stdio: "inherit", cwd: ENGINE_DIR });
   } catch (e) {
-    console.warn("[specter] pip install fallo (continuando):", e.message);
+    console.warn("[wraith] pip install fallo (continuando):", e.message);
   }
 
   // El navegador sigiloso (specter.stealth_browser) necesita el Chromium de
@@ -54,7 +54,7 @@ function main() {
       timeout: 10 * 60 * 1000,
     });
   } catch (e) {
-    console.warn("[specter] patchright install fallo (el engine usara fallback HTTP):", e.message);
+    console.warn("[wraith] patchright install fallo (el engine usara fallback HTTP):", e.message);
   }
 }
 

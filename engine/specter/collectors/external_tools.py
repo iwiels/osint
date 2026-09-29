@@ -1,5 +1,5 @@
 """
-SpecterOSINT - External Tools Collectors
+WraithOSINT - External Tools Collectors
 Colectores que integran herramientas externas de seguridad vía subprocess.
 
 Cada colector ejecuta la herramienta como subprocess si está instalada.

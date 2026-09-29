@@ -791,7 +791,7 @@ async def events_stream() -> StreamingResponse:
 async def event_stream(queue: asyncio.Queue) -> AsyncIterator[bytes]:
     """Serializa la cola del bus al formato SSE (extraído para testeo directo)."""
     try:
-        yield b": specter-engine-sse\n\n"
+        yield b": wraith-engine-sse\n\n"
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=15.0)

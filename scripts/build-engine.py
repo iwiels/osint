@@ -1,5 +1,5 @@
 """
-Empaqueta el motor Specter como ejecutable onefile (PyInstaller).
+Empaqueta el motor Wraith como ejecutable onefile (PyInstaller).
 
 Uso:
     .venv/Scripts/python.exe scripts/build-engine.py            # build real
@@ -163,7 +163,7 @@ def stamp_build_info() -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Empaqueta el motor Specter (PyInstaller)")
+    parser = argparse.ArgumentParser(description="Empaqueta el motor Wraith (PyInstaller)")
     parser.add_argument(
         "--dry-run", action="store_true", help="Sólo valida el entorno e imprime el comando"
     )
@@ -175,32 +175,32 @@ def main() -> int:
     problems = preflight()
     if problems:
         for problem in problems:
-            print(f"[specter] ✗ {problem}", file=sys.stderr)
+            print(f"[wraith] ✗ {problem}", file=sys.stderr)
         return 1
 
     if args.clean:
         for path in (DIST, BUILD):
             if path.exists():
                 shutil.rmtree(path)
-                print(f"[specter] limpiado {path}")
+                print(f"[wraith] limpiado {path}")
 
     DIST.mkdir(exist_ok=True)
     build_hash = stamp_build_info()
-    print(f"[specter] build_hash sellado: {build_hash}")
+    print(f"[wraith] build_hash sellado: {build_hash}")
     cmd = build_command()
-    print(f"[specter] python: {sys.version.split()[0]} ({sys.executable})")
-    print("[specter] comando:", " ".join(cmd))
+    print(f"[wraith] python: {sys.version.split()[0]} ({sys.executable})")
+    print("[wraith] comando:", " ".join(cmd))
 
     if args.dry_run:
-        print(f"[specter] dry-run OK -> produciría {DIST / BINARY_NAME}")
+        print(f"[wraith] dry-run OK -> produciría {DIST / BINARY_NAME}")
         return 0
 
     subprocess.run(cmd, check=True, cwd=ROOT)
     binary = DIST / (BINARY_NAME + ".exe" if sys.platform == "win32" else BINARY_NAME)
     if not binary.exists():
-        print(f"[specter] ✗ el build terminó sin producir {binary}", file=sys.stderr)
+        print(f"[wraith] ✗ el build terminó sin producir {binary}", file=sys.stderr)
         return 1
-    print(f"[specter] OK -> {binary} ({binary.stat().st_size // (1024 * 1024)} MB)")
+    print(f"[wraith] OK -> {binary} ({binary.stat().st_size // (1024 * 1024)} MB)")
     return 0
 
 

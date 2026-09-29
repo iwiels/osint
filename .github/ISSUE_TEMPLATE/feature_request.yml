@@ -1,0 +1,57 @@
+name: 💡 Propuesta
+description: Sugerir una funcionalidad, un colector o una mejora
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de proponer, mira el [roadmap](../blob/main/ARCHITECTURE.md#roadmap):
+        puede que ya esté planificado.
+
+        Si tu propuesta es un **colector o fuente de datos nueva**, revisa cómo
+        están estructurados los existentes en `engine/specter/collectors/base.py`.
+
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+      description: Describe la necesidad investigativa, no la implementación.
+      placeholder: "Al investigar un dominio no puedo correlacionar X con Y, así que acabo haciendo Z a mano."
+    validations:
+      required: true
+
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+      description: Qué te gustaría que hiciera el proyecto.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+      description: Otras herramientas que lo resuelven, workarounds, etc.
+
+  - type: dropdown
+    id: ambito
+    attributes:
+      label: Ámbito
+      multiple: true
+      options:
+        - Motor / colectores (Python)
+        - Agente IA
+        - Consola desktop (React)
+        - SDK TypeScript
+        - Empaquetado / CI
+        - Documentación
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: sensibilidad
+    attributes:
+      label: Sensibilidad
+      options:
+        - label: Esta propuesta añade una capacidad activa o de doble uso (impersonación, enumeración de cuentas, mayor alcance de red) y estoy dispuesto a discutir su encuadre legal en `LEGAL.md`.
