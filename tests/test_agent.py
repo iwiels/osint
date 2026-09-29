@@ -38,6 +38,41 @@ def test_collectors_and_writes_require_permission() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_tool_emite_permission_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Al vencer la espera se publica `permission.timeout` con el request_id.
+
+    Sin ese evento la UI conservaba el diálogo en pantalla: el analista creía
+    estar autorizando mientras el motor ya había devuelto el error al modelo,
+    y su clic respondía a un id caducado (404).
+    """
+    from engine import agent
+
+    monkeypatch.setattr(agent, "PERMISSION_TIMEOUT_SECONDS", 0.05)
+    events: list[tuple[str, dict]] = []
+
+    async def emit(event_type: str, payload: dict) -> None:
+        events.append((event_type, payload))
+
+    session = "s-timeout-regression"
+    try:
+        result = await agent._execute_tool(
+            "link_entities",
+            {"case_id": "c1", "source_id": "a", "target_id": "b"},
+            session,
+            emit,
+        )
+    finally:
+        agent._session_approvals.discard((session, "link_entities"))
+
+    assert "sin respuesta del analista" in result
+    timeouts = [payload for kind, payload in events if kind == "permission.timeout"]
+    assert len(timeouts) == 1, "debe emitirse exactamente un permission.timeout"
+    assert timeouts[0]["tool"] == "link_entities"
+    # La petición caducada no puede quedarse registrada: reintentarla daría 404.
+    assert timeouts[0]["request_id"] not in agent._pending_permissions
+
+
+@pytest.mark.asyncio
 async def test_respond_permission_allow() -> None:
     req = PermissionRequest(
         request_id="p1", tool_name="investigate_domain", arguments={}, session_id="s1"
