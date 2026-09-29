@@ -1,0 +1,24 @@
+id: email_in_multiple_breaches
+version: 1
+meta:
+  name: "Email found in multiple data breaches"
+  description: >
+    An email address was found in multiple data breaches. This indicates a
+    significant compromise history and suggests the email may be targeted in
+    credential stuffing attacks or may have been exposed to multiple threat actors.
+  risk: HIGH
+collections:
+  - collect:
+      - method: exact
+        field: type
+        value: EMAIL
+      - method: regex
+        field: type
+        value: "BREACH_*"
+aggregation:
+  field: data
+analysis:
+  - method: threshold
+    field: data
+    minimum: 2
+headline: "Email in multiple breaches: {data}"

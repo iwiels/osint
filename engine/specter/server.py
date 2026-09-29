@@ -1,24 +1,79 @@
 """
-SpecterOSINT - FastMCP Server
-Servidor MCP profesional para OpenCode AI con capacidades forenses, grafos y cadena de custodia.
+WraithOSINT - FastMCP Server
+Servidor MCP profesional para clientes de IA con capacidades forenses, grafos
+y cadena de custodia.
 """
 
 import asyncio
 import json
 import re
 import uuid
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from fastapi import FastAPI, HTTPException
 from mcp.server.mcpserver import MCPServer
+from pydantic import BaseModel as FastAPIBaseModel
 from specter import browser_osint
 from specter import config as specter_config
 from specter import triage as artifact_triage
 from specter.collectors.artifacts import FileForensics
 from specter.collectors.attack_surface import AttackSurfaceCollector
+from specter.collectors.blockchain import (
+    BitcoinAbuseCollector,
+    BitcoinWhoIsWhoCollector,
+    BlockchainInfoCollector,
+    EtherscanCollector,
+)
+from specter.collectors.breach_data import (
+    HaveIBeenPwnedCollector,
+    IntelligenceXCollector,
+    LeakIXCollector,
+    LeakLookupCollector,
+)
+from specter.collectors.cloud_buckets import (
+    AzureBlobFinderCollector,
+    DigitalOceanSpaceFinderCollector,
+    GoogleCloudStorageFinderCollector,
+    GrayhatWarfareCollector,
+    S3BucketFinderCollector,
+)
+from specter.collectors.company_data import (
+    ClearbitCollector,
+    FullContactCollector,
+    GLEIFCollector,
+    OpenCorporatesCollector,
+)
+from specter.collectors.darkweb import (
+    AhmiaCollector,
+    OnionLinkCollector,
+    TorCHCollector,
+)
+from specter.collectors.dns_bruteforce import DNSBruteForceCollector
+from specter.collectors.dns_zonexfer import DNSZoneTransferCollector
 from specter.collectors.docforensics import OfficeDocHunter
 from specter.collectors.dorker import DocumentHunter
+from specter.collectors.external_tools import (
+    CMSeeKDetectorCollector,
+    NmapScannerCollector,
+    NucleiScannerCollector,
+    RetireJSScannerCollector,
+    SnallygasterScannerCollector,
+    TestSSLScannerCollector,
+    TruffleHogScannerCollector,
+    WAFW00FDetectorCollector,
+    WhatWebScannerCollector,
+)
+from specter.collectors.extractors import (
+    CreditCardExtractorCollector,
+    EmailExtractorCollector,
+    HashExtractorCollector,
+    IBANExtractorCollector,
+    NameExtractorCollector,
+    PhoneExtractorCollector,
+)
 from specter.collectors.github_forensics import GitHubForensics
 from specter.collectors.identity import (
     EmailInvestigator,
@@ -28,9 +83,44 @@ from specter.collectors.identity import (
     UsernameInvestigator,
 )
 from specter.collectors.network import CrtShCollector, DNSCollector, IPEnricher, TLSCollector
+from specter.collectors.passive_dns import (
+    CIRCLPassiveDNSCollector,
+    DNSDBChecker,
+    DNSGrepCollector,
+    MnemonicPassiveDNSCollector,
+)
 from specter.collectors.person import PersonInvestigator
+from specter.collectors.portscan import PortScanCollector
+from specter.collectors.public_info import (
+    HostingProviderIdentifierCollector,
+    PasteBinSearchCollector,
+    PGPKeyServerCollector,
+    TORExitNodeCollector,
+    WikipediaEditsCollector,
+    ZoneHDefacementCollector,
+)
 from specter.collectors.registry import CollectorRegistry
 from specter.collectors.research import DeepResearchCollector
+from specter.collectors.search_engines import (
+    BingSearchCollector,
+    CommonCrawlCollector,
+    DuckDuckGoCollector,
+    GrepAppCollector,
+    SearchcodeCollector,
+)
+from specter.collectors.similar_domains import (
+    SimilarDomainFinderCollector,
+    TLDSearchCollector,
+)
+from specter.collectors.social_media import (
+    FlickrCollector,
+    KeybaseCollector,
+    MySpaceCollector,
+    SlideShareCollector,
+    TwitterCollector,
+    VenmoCollector,
+)
+from specter.collectors.subdomain_takeover import SubdomainTakeoverCollector
 from specter.collectors.threatintel import (
     AbuseIPDBCollector,
     GreyNoiseCollector,
@@ -43,12 +133,31 @@ from specter.collectors.threatintel import (
     VirusTotalCollector,
     WaybackCollector,
 )
-from specter.collectors.threatintel_enhanced import (
-    CensysCollector,
-    HaveIBeenPwnedCollector,
+from specter.collectors.threatintel_enhanced import CensysCollector
+from specter.collectors.threatintel_free import (
+    AlienVaultOTXCollector,
+    BlocklistCollector,
+    DroneBLCollector,
+    MalwarePatrolCollector,
+    OpenPhishCollector,
+    PhishTankCollector,
+    SpamhausCollector,
+    ThreatCrowdCollector,
+    ThreatMinerCollector,
 )
 from specter.collectors.web import WebFetchCollector, WebSearchCollector
+from specter.collectors.web_analytics import WebAnalyticsExtractorCollector
+from specter.collectors.web_spider import WebSpiderCollector
+from specter.collectors.web_tech import (
+    CookieExtractorCollector,
+    ErrorStringExtractorCollector,
+    StrangeHeadersCollector,
+    WebFrameworkIdentifierCollector,
+    WebServerIdentifierCollector,
+)
+from specter.osint_core.compaction import CompactionService
 from specter.osint_core.correlation import CorrelationEngine
+from specter.osint_core.correlation_rules import CorrelationRulesEngine
 from specter.osint_core.database import Database
 from specter.osint_core.graph import OSINTGraph
 from specter.osint_core.ledger import ForensicLedger
@@ -59,7 +168,20 @@ from specter.osint_core.models import (
     RelationEdge,
     RelationType,
 )
+from specter.osint_core.permission_gate import (
+    PermissionGate,
+    PermissionRequest,
+    PermissionRule,
+)
+from specter.osint_core.permission_gate import (
+    permission_gate as default_permission_gate,
+)
 from specter.osint_core.timeline import CaseTimeline
+from specter.osint_core.tool_registry import (
+    ToolPermission,
+    ToolRegistry,
+    register_builtin_tools,
+)
 from specter.visualizer.exporter import DossierExporter
 
 # Inicialización del servidor MCP y servicios core
@@ -71,7 +193,77 @@ ledger = ForensicLedger(db)
 graph = OSINTGraph(db)
 exporter = DossierExporter(db)
 correlation = CorrelationEngine(db)
+correlation_rules = CorrelationRulesEngine(db)
 timeline_engine = CaseTimeline(db)
+
+# Permission Gate: control de acceso a herramientas y recursos
+# Se integra con el agente para verificar permisos antes de ejecutar acciones
+permission_gate = default_permission_gate
+
+# Tool Registry: catálogo dinámico de herramientas con materialización por permisos
+# El agente solo ve las tools para las que tiene permiso de usar
+tool_registry = ToolRegistry()
+register_builtin_tools()
+
+# Compaction Service: compactación de resultados grandes
+# Se aplica a resultados que superan el umbral de tamaño para no inflar el contexto
+compaction_svc = CompactionService()
+
+
+def get_tools_for_agent(permissions: set[ToolPermission] | None = None) -> list[dict[str, Any]]:
+    """Obtiene las tools materializadas para el agente según sus permisos.
+
+    El agente solo ve las tools que tiene permiso de usar. Si no se especifican
+    permisos, solo se muestran las tools públicas (permission=None).
+    """
+    tools = tool_registry.materialize(permissions)
+    return [
+        {
+            "name": t.name,
+            "description": t.description,
+            "input_schema": t.input_schema,
+            "output_schema": t.output_schema,
+            "permission": t.permission.value if t.permission else None,
+            "category": t.category.value,
+        }
+        for t in tools
+    ]
+
+
+def compact_large_result(result: Any) -> dict[str, Any]:
+    """Compacta un resultado de colector si supera el umbral de tamaño.
+
+    Los resultados compactados se guardan en disco y se retorna una referencia
+    URI para recuperar la evidencia completa.
+    """
+    from specter.osint_core.models import CollectorResult
+
+    if not isinstance(result, CollectorResult):
+        return {"error": "Resultado no es un CollectorResult"}
+
+    if not compaction_svc.should_compact(result):
+        return {
+            "compacted": False,
+            "reason": "Resultado por debajo del umbral de compactación",
+            "entities": len(result.entities),
+            "relations": len(result.relations),
+        }
+
+    compacted = compaction_svc.compact_collector_result(result)
+    return {
+        "compacted": True,
+        "collector_name": compacted.collector_name,
+        "source_target": compacted.source_target,
+        "entities_count": len(compacted.entities),
+        "relations_count": len(compacted.relations),
+        "raw_payload_ref": compacted.raw_payload_ref,
+        "summary": compacted.summary,
+        "original_size_bytes": compacted.original_size_bytes,
+        "compacted_size_bytes": compacted.compacted_size_bytes,
+        "compression_ratio": round(
+            compacted.compacted_size_bytes / max(compacted.original_size_bytes, 1), 2
+        ),
+    }
 
 
 def reset_services(db_path: str | Path | None = None) -> Database:
@@ -123,11 +315,118 @@ abuseipdb_collector = AbuseIPDBCollector()
 hunter_collector = HunterCollector()
 attack_surface_collector = AttackSurfaceCollector()
 
+# Colectores de cloud buckets (S3, Azure, GCS, DigitalOcean, Grayhat)
+s3bucket_collector = S3BucketFinderCollector()
+azureblob_collector = AzureBlobFinderCollector()
+digitalocean_space_collector = DigitalOceanSpaceFinderCollector()
+gcs_collector = GoogleCloudStorageFinderCollector()
+grayhat_warfare_collector = GrayhatWarfareCollector()
+
+# Colectores de datos de empresa (OpenCorporates, GLEIF, Clearbit, FullContact)
+opencorporates_collector = OpenCorporatesCollector()
+gleif_collector = GLEIFCollector()
+clearbit_collector = ClearbitCollector()
+fullcontact_collector = FullContactCollector()
+
+# Colectores de blockchain (Bitcoin, Ethereum)
+bitcoinwhoswho_collector = BitcoinWhoIsWhoCollector()
+bitcoinabuse_collector = BitcoinAbuseCollector()
+blockchaininfo_collector = BlockchainInfoCollector()
+etherscan_collector = EtherscanCollector()
+
 censys_collector = CensysCollector()
 haveibeenpwned_collector = HaveIBeenPwnedCollector()
 maigret_hunter = MaigretHunter()
 holehe_hunter = HoleheHunter()
 identity_collector = IdentityCollector()
+
+# Colectores de motores de búsqueda (gratis, sin API key)
+duckduckgo_collector = DuckDuckGoCollector()
+bing_collector = BingSearchCollector()
+commoncrawl_collector = CommonCrawlCollector()
+grepapp_collector = GrepAppCollector()
+searchcode_collector = SearchcodeCollector()
+
+# Colectores de brechas de datos (HIBP requiere key; el resto gratis)
+leaklookup_collector = LeakLookupCollector()
+leakix_collector = LeakIXCollector()
+intelligencex_collector = IntelligenceXCollector()
+
+# Colectores gratuitos adicionales (sin API key)
+alienvault_otx_collector = AlienVaultOTXCollector()
+threatcrowd_collector = ThreatCrowdCollector()
+threatminer_collector = ThreatMinerCollector()
+phishtank_collector = PhishTankCollector()
+openphish_collector = OpenPhishCollector()
+malwarepatrol_collector = MalwarePatrolCollector()
+spamhaus_collector = SpamhausCollector()
+blocklist_collector = BlocklistCollector()
+dronebl_collector = DroneBLCollector()
+subdomain_takeover_collector = SubdomainTakeoverCollector()
+
+# Colectores Passive DNS (resolución histórica)
+dnsgrep_collector = DNSGrepCollector()
+mnemonic_pdns_collector = MnemonicPassiveDNSCollector()
+circl_pdns_collector = CIRCLPassiveDNSCollector()
+dnsdb_checker = DNSDBChecker()
+
+# Colectores Dark Web (búsquedas en servicios ocultos)
+ahmia_collector = AhmiaCollector()
+torch_collector = TorCHCollector()
+onion_link_collector = OnionLinkCollector()
+
+# Colectores de web spider, port scan y DNS
+web_spider_collector = WebSpiderCollector()
+portscan_collector = PortScanCollector()
+dns_zonexfer_collector = DNSZoneTransferCollector()
+dns_bruteforce_collector = DNSBruteForceCollector()
+
+# Colectores de extracción de inteligencia (emails, teléfonos, nombres, hashes, CC, IBAN)
+email_extractor_collector = EmailExtractorCollector()
+phone_extractor_collector = PhoneExtractorCollector()
+name_extractor_collector = NameExtractorCollector()
+hash_extractor_collector = HashExtractorCollector()
+creditcard_extractor_collector = CreditCardExtractorCollector()
+iban_extractor_collector = IBANExtractorCollector()
+
+# Colectores de web analytics y tecnología
+web_analytics_collector = WebAnalyticsExtractorCollector()
+web_framework_collector = WebFrameworkIdentifierCollector()
+web_server_collector = WebServerIdentifierCollector()
+strange_headers_collector = StrangeHeadersCollector()
+cookie_extractor_collector = CookieExtractorCollector()
+error_string_collector = ErrorStringExtractorCollector()
+
+# Colectores de dominios similares (typosquatting, TLDs)
+similar_domains_collector = SimilarDomainFinderCollector()
+tld_search_collector = TLDSearchCollector()
+
+# Colectores de información pública (PasteBin, Wikipedia, Zone-H, PGP, Hosting, TOR)
+pastebin_search_collector = PasteBinSearchCollector()
+wikipedia_edits_collector = WikipediaEditsCollector()
+zoneh_defacement_collector = ZoneHDefacementCollector()
+pgp_keyserver_collector = PGPKeyServerCollector()
+hosting_provider_collector = HostingProviderIdentifierCollector()
+tor_exit_node_collector = TORExitNodeCollector()
+
+# Colectores de herramientas externas (nmap, nuclei, whatweb, wafw00f, cmseek, etc.)
+nmap_scanner_collector = NmapScannerCollector()
+nuclei_scanner_collector = NucleiScannerCollector()
+whatweb_scanner_collector = WhatWebScannerCollector()
+wafw00f_detector_collector = WAFW00FDetectorCollector()
+cmseek_detector_collector = CMSeeKDetectorCollector()
+trufflehog_scanner_collector = TruffleHogScannerCollector()
+retirejs_scanner_collector = RetireJSScannerCollector()
+testssl_scanner_collector = TestSSLScannerCollector()
+snallygaster_scanner_collector = SnallygasterScannerCollector()
+
+# Colectores de social media (Twitter, Flickr, SlideShare, MySpace, Venmo, Keybase)
+twitter_collector = TwitterCollector()
+flickr_collector = FlickrCollector()
+slideshare_collector = SlideShareCollector()
+myspace_collector = MySpaceCollector()
+venmo_collector = VenmoCollector()
+keybase_collector = KeybaseCollector()
 
 collectors = CollectorRegistry()
 for _collector in (
@@ -161,6 +460,95 @@ for _collector in (
     hunter_collector,
     censys_collector,
     haveibeenpwned_collector,
+    alienvault_otx_collector,
+    threatcrowd_collector,
+    threatminer_collector,
+    phishtank_collector,
+    openphish_collector,
+    malwarepatrol_collector,
+    spamhaus_collector,
+    blocklist_collector,
+    dronebl_collector,
+    subdomain_takeover_collector,
+    dnsgrep_collector,
+    mnemonic_pdns_collector,
+    circl_pdns_collector,
+    dnsdb_checker,
+    ahmia_collector,
+    torch_collector,
+    onion_link_collector,
+    # Colectores de cloud buckets
+    s3bucket_collector,
+    azureblob_collector,
+    digitalocean_space_collector,
+    gcs_collector,
+    grayhat_warfare_collector,
+    # Colectores de datos de empresa
+    opencorporates_collector,
+    gleif_collector,
+    clearbit_collector,
+    fullcontact_collector,
+    # Colectores de blockchain
+    bitcoinwhoswho_collector,
+    bitcoinabuse_collector,
+    blockchaininfo_collector,
+    etherscan_collector,
+    # Colectores de motores de búsqueda
+    duckduckgo_collector,
+    bing_collector,
+    commoncrawl_collector,
+    grepapp_collector,
+    searchcode_collector,
+    # Colectores de brechas de datos
+    leaklookup_collector,
+    leakix_collector,
+    intelligencex_collector,
+    # Colectores de web spider, port scan y DNS
+    web_spider_collector,
+    portscan_collector,
+    dns_zonexfer_collector,
+    dns_bruteforce_collector,
+    # Colectores de dominios similares
+    similar_domains_collector,
+    tld_search_collector,
+    # Colectores de información pública
+    pastebin_search_collector,
+    wikipedia_edits_collector,
+    zoneh_defacement_collector,
+    pgp_keyserver_collector,
+    hosting_provider_collector,
+    tor_exit_node_collector,
+    # Colectores de extracción de inteligencia
+    email_extractor_collector,
+    phone_extractor_collector,
+    name_extractor_collector,
+    hash_extractor_collector,
+    creditcard_extractor_collector,
+    iban_extractor_collector,
+    # Colectores de web analytics y tecnología
+    web_analytics_collector,
+    web_framework_collector,
+    web_server_collector,
+    strange_headers_collector,
+    cookie_extractor_collector,
+    error_string_collector,
+    # Colectores de herramientas externas
+    nmap_scanner_collector,
+    nuclei_scanner_collector,
+    whatweb_scanner_collector,
+    wafw00f_detector_collector,
+    cmseek_detector_collector,
+    trufflehog_scanner_collector,
+    retirejs_scanner_collector,
+    testssl_scanner_collector,
+    snallygaster_scanner_collector,
+    # Colectores de social media
+    twitter_collector,
+    flickr_collector,
+    slideshare_collector,
+    myspace_collector,
+    venmo_collector,
+    keybase_collector,
 ):
     collectors.register(_collector)
 
@@ -1221,27 +1609,50 @@ async def web_fetch(url: str, max_chars: int = 12000, timeout: int = 30) -> str:
 
 
 @mcp_server.tool()
-async def parallel_search(queries: list[str], top_k: int = 5) -> str:
+async def parallel_search(queries: list[str], top_k: int = 5, timeout_s: float = 45.0) -> str:
     """
     Barrido concurrente de varias consultas web en una sola llamada (fan-out
-    estilo opencode: semáforo de 5, timeout 25s por consulta). Una consulta
-    fallida no tumba al resto: vuelve como {"error": ...} en su entrada.
+    estilo opencode: semáforo de 5). Una consulta fallida no tumba al resto:
+    vuelve con su propio `status`/`reason` en su entrada.
+
+    El presupuesto por consulta cubre el peor caso real: ~15s de los motores
+    (navegación 12s + settle + parse, en paralelo) más hasta 25s del fallback
+    HTTP de DDG, que corre secuencialmente cuando el motor renderizado no da
+    resultados. Antes el límite era 25s, menor que ese peor caso, así que
+    cualquier motor lento hacía expirar la consulta entera y se perdían
+    también los resultados de los motores que sí funcionaban.
     """
     clean = [q.strip() for q in (queries or []) if isinstance(q, str) and q.strip()][:10]
     if not clean:
         return json.dumps({"error": "queries vacío: pasa 1-10 consultas no vacías"})
 
     sem = asyncio.Semaphore(5)
+    budget = max(10.0, min(float(timeout_s), 120.0))
 
     async def _one(query: str) -> tuple[str, dict[str, Any]]:
         async with sem:
             try:
                 res = await asyncio.wait_for(
-                    web_search_collector.collect(query, top_k=top_k), timeout=25.0
+                    web_search_collector.collect(query, top_k=top_k), timeout=budget
                 )
                 return query, json.loads(res.raw_payload or "{}")
+            except TimeoutError:
+                # `str(TimeoutError())` es vacío: sin esto el agente veía
+                # "TimeoutError: " y no distinguía saturación de red de un
+                # fallo real, así que repetía la misma búsqueda.
+                return query, {
+                    "query": query,
+                    "status": "timeout",
+                    "error": f"TimeoutError: la consulta superó el presupuesto de {budget:.0f}s",
+                    "results": [],
+                }
             except Exception as exc:
-                return query, {"query": query, "error": f"{type(exc).__name__}: {exc}"}
+                return query, {
+                    "query": query,
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "results": [],
+                }
 
     done = await asyncio.gather(*(_one(q) for q in clean))
     return json.dumps(
@@ -1423,6 +1834,38 @@ def correlate_cases(case_id: str | None = None, entity_types: list[str] | None =
 
 
 @mcp_server.tool()
+def run_correlations(case_id: str, rule_id: str | None = None) -> str:
+    """
+    Ejecuta reglas de correlación YAML contra el grafo de un caso.
+
+    Sin rule_id ejecuta todas las reglas cargadas; con rule_id ejecuta solo esa
+    regla. Las reglas se definen en engine/specter/correlations/*.yaml y detectan
+    patrones como IPs maliciosas múltiples, sistemas dev expuestos, vulnerabilidades
+    críticas, dominios similares, etc.
+    """
+    case = db.get_case(case_id)
+    if not case:
+        return json.dumps({"error": f"Caso {case_id} no existe"})
+
+    if rule_id:
+        results = correlation_rules.execute_rule(case_id, rule_id)
+    else:
+        results = correlation_rules.execute_all_rules(case_id)
+
+    return json.dumps(
+        {
+            "status": "COMPLETED",
+            "case_id": case_id,
+            "rule_id": rule_id,
+            "total_results": len(results),
+            "results": [r.to_dict() for r in results],
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
+
+
+@mcp_server.tool()
 def case_timeline(case_id: str, bucket: str = "day") -> str:
     """
     Reconstruye la línea temporal del caso: cuándo entró cada artefacto al grafo, cuándo se
@@ -1519,6 +1962,528 @@ def export_case_stix(case_id: str) -> str:
         },
         indent=2,
     )
+
+
+# --- Permission Gate: API HTTP e integración con el motor ---
+
+
+def _get_permission_gate() -> PermissionGate:
+    """Retorna la instancia activa del Permission Gate."""
+    return permission_gate
+
+
+@mcp_server.tool()
+def list_permissions() -> str:
+    """
+    Lista todas las reglas de permisos activas en el sistema.
+    """
+    gate = _get_permission_gate()
+    rules = gate.get_rules()
+    return json.dumps(
+        {
+            "total": len(rules),
+            "rules": [r.model_dump() for r in rules],
+        },
+        indent=2,
+    )
+
+
+@mcp_server.tool()
+def add_permission_rule(
+    action: str,
+    resource: str,
+    effect: str,
+    description: str = "",
+) -> str:
+    """
+    Agrega una nueva regla de permisos al sistema.
+
+    Args:
+        action: Acción (collect, resolve, correlate, export, delete)
+        resource: Patrón del recurso con wildcards (ej: "collector:dns_*")
+        effect: Efecto (allow, deny, ask)
+        description: Descripción opcional
+    """
+    gate = _get_permission_gate()
+    try:
+        rule = PermissionRule(
+            action=action,
+            resource=resource,
+            effect=effect,  # type: ignore[arg-type]
+            description=description,
+        )
+    except ValueError as exc:
+        return json.dumps({"error": f"Regla inválida: {exc}"})
+
+    gate.add_rule(rule)
+    return json.dumps(
+        {
+            "status": "RULE_ADDED",
+            "rule": rule.model_dump(),
+        },
+        indent=2,
+    )
+
+
+@mcp_server.tool()
+def remove_permission_rule(rule_id: str) -> str:
+    """
+    Elimina una regla de permisos por su ID.
+    """
+    gate = _get_permission_gate()
+    removed = gate.remove_rule(rule_id)
+    if not removed:
+        return json.dumps({"error": f"Regla '{rule_id}' no encontrada"})
+    return json.dumps(
+        {
+            "status": "RULE_REMOVED",
+            "rule_id": rule_id,
+        },
+        indent=2,
+    )
+
+
+@mcp_server.tool()
+def check_permission(action: str, resource: str) -> str:
+    """
+    Verifica si una acción está permitida sobre un recurso.
+
+    Returns:
+        JSON con el resultado de la verificación y, si aplica, una solicitud de permiso.
+    """
+    gate = _get_permission_gate()
+    allowed, request = gate.check(action, resource)
+    result: dict[str, Any] = {
+        "action": action,
+        "resource": resource,
+        "allowed": allowed,
+    }
+    if request is not None:
+        result["permission_request"] = request.model_dump()
+        result["message"] = request.message
+    return json.dumps(result, indent=2)
+
+
+@mcp_server.tool()
+def evaluate_permission(action: str, resource: str) -> str:
+    """
+    Evalúa el permiso para una acción y recurso, retornando el efecto de la regla aplicable.
+    """
+    gate = _get_permission_gate()
+    effect = gate.evaluate(action, resource)
+    return json.dumps(
+        {
+            "action": action,
+            "resource": resource,
+            "effect": effect.value,
+        },
+        indent=2,
+    )
+
+
+# Integración con el motor: verificar permisos antes de ejecutar
+# Las herramientas que ejecutan acciones sensibles deben verificar permisos
+
+
+def _check_tool_permission(tool_name: str, resource: str) -> tuple[bool, str]:
+    """
+    Verifica si una herramienta tiene permiso para ejecutarse.
+
+    Args:
+        tool_name: Nombre de la herramienta (ej: "run_collector")
+        resource: Recurso sobre el que actúa (ej: "collector:dns_zonexfer")
+
+    Returns:
+        Tupla (permitido, mensaje_error)
+    """
+    gate = _get_permission_gate()
+
+    # Mapear nombre de herramienta a acción
+    action_map = {
+        "run_collector": "collect",
+        "investigate_domain": "collect",
+        "investigate_ip": "collect",
+        "investigate_identity": "collect",
+        "investigate_person": "collect",
+        "investigate_email": "collect",
+        "analyze_file_metadata": "collect",
+        "hunt_office_docs": "collect",
+        "hunt_documents_and_leaks": "collect",
+        "deep_investigate_github": "collect",
+        "deep_research": "collect",
+        "enumerate_subdomains": "collect",
+        "link_entities": "correlate",
+        "correlate_cases": "correlate",
+        "run_correlations": "correlate",
+        "export_case_dossier": "export",
+        "export_case_stix": "export",
+    }
+
+    action = action_map.get(tool_name, "collect")
+    allowed, request = gate.check(action, resource)
+
+    if allowed:
+        return True, ""
+
+    if request is not None:
+        # Emitir evento de solicitud de permiso
+        gate.emit_permission_request(request)
+        return False, f"PERMISSION_REQUIRED: {request.message}"
+
+    return False, f"PERMISSION_DENIED: {action} sobre {resource} no está permitido"
+
+
+# Listener para eventos de permiso: registra en el ledger
+def _permission_event_listener(request: PermissionRequest) -> None:
+    """
+    Listener que registra las solicitudes de permiso en el ledger.
+    """
+    with suppress(Exception):
+        # El listener no debe romper el flujo principal
+        ledger.record_evidence_action(
+            case_id="permission_system",
+            collector="permission_gate",
+            action=f"PERMISSION_REQUEST: {request.action} -> {request.resource}",
+        )
+
+
+# Registrar el listener en el gate
+permission_gate.add_listener(_permission_event_listener)
+
+
+# --- Endpoints HTTP CQRS ---
+
+cqrs_app = FastAPI(title="WraithOSINT CQRS API")
+
+
+class CommandRequest(FastAPIBaseModel):
+    """Modelo para requests de comandos."""
+
+    command_type: str
+    payload: dict[str, Any]
+
+
+class QueryRequest(FastAPIBaseModel):
+    """Modelo para requests de queries."""
+
+    query_type: str
+    payload: dict[str, Any]
+
+
+@cqrs_app.post("/commands")
+async def dispatch_command(request: CommandRequest) -> dict[str, Any]:
+    """
+    Despacha un comando CQRS.
+
+    Tipos soportados:
+    - create_case: Crea un nuevo caso
+    - delete_case: Elimina un caso
+    - run_collector: Ejecuta un colector
+    - resolve_entity: Resuelve una entidad
+    - update_graph: Actualiza el grafo
+    - export_report: Exporta un reporte
+    """
+    from specter.osint_core.commands import (
+        CreateCaseCommand,
+        DeleteCaseCommand,
+        ExportReportCommand,
+        ResolveEntityCommand,
+        RunCollectorCommand,
+        UpdateGraphCommand,
+    )
+
+    try:
+        if request.command_type == "create_case":
+            cmd = CreateCaseCommand(
+                db=db,
+                ledger=ledger,
+                name=request.payload.get("name", ""),
+                description=request.payload.get("description", ""),
+                investigator=request.payload.get("investigator", "Analista_Specter"),
+            )
+        elif request.command_type == "delete_case":
+            cmd = DeleteCaseCommand(
+                db=db,
+                ledger=ledger,
+                case_id=request.payload.get("case_id", ""),
+            )
+        elif request.command_type == "run_collector":
+            collector_name = request.payload.get("collector", "")
+            try:
+                spec = collectors.spec(collector_name)
+                collector = spec.instance
+            except KeyError as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Colector '{collector_name}' no registrado",
+                ) from exc
+            cmd = RunCollectorCommand(
+                db=db,
+                graph=graph,
+                ledger=ledger,
+                case_id=request.payload.get("case_id", ""),
+                collector=collector,
+                target=request.payload.get("target", ""),
+                options=request.payload.get("options"),
+            )
+        elif request.command_type == "resolve_entity":
+            from specter.osint_core.models import EntityType
+
+            cmd = ResolveEntityCommand(
+                db=db,
+                graph=graph,
+                ledger=ledger,
+                case_id=request.payload.get("case_id", ""),
+                entity_type=EntityType(request.payload.get("entity_type", "UNKNOWN")),
+                value=request.payload.get("value", ""),
+                label=request.payload.get("label"),
+                attributes=request.payload.get("attributes"),
+                confidence=request.payload.get("confidence", 1.0),
+            )
+        elif request.command_type == "update_graph":
+            from specter.osint_core.models import EntityNode, RelationEdge
+
+            entities = [EntityNode(**e) for e in request.payload.get("entities", [])]
+            relations = [RelationEdge(**r) for r in request.payload.get("relations", [])]
+            cmd = UpdateGraphCommand(
+                db=db,
+                graph=graph,
+                ledger=ledger,
+                case_id=request.payload.get("case_id", ""),
+                entities=entities,
+                relations=relations,
+                action=request.payload.get("action", "GRAPH_UPDATE"),
+            )
+        elif request.command_type == "export_report":
+            cmd = ExportReportCommand(
+                db=db,
+                ledger=ledger,
+                case_id=request.payload.get("case_id", ""),
+                output_path=request.payload.get("output_path", "report.json"),
+                format=request.payload.get("format", "json"),
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tipo de comando no soportado: {request.command_type}",
+            )
+
+        result = await cmd.execute()
+        return result.model_dump()
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@cqrs_app.post("/queries")
+async def dispatch_query(request: QueryRequest) -> dict[str, Any]:
+    """
+    Despacha una query CQRS.
+
+    Tipos soportados:
+    - get_case: Obtiene un caso
+    - get_entities: Obtiene entidades
+    - get_graph: Obtiene el grafo
+    - search_evidence: Busca evidencias
+    - get_timeline: Obtiene el timeline
+    - get_correlations: Obtiene correlaciones
+    """
+    from specter.osint_core.queries import (
+        GetCaseQuery,
+        GetCorrelationsQuery,
+        GetEntitiesQuery,
+        GetGraphQuery,
+        GetTimelineQuery,
+        SearchEvidenceQuery,
+    )
+
+    try:
+        if request.query_type == "get_case":
+            query = GetCaseQuery(
+                db=db,
+                case_id=request.payload.get("case_id", ""),
+            )
+        elif request.query_type == "get_entities":
+            from specter.osint_core.models import EntityType
+
+            entity_type = request.payload.get("entity_type")
+            query = GetEntitiesQuery(
+                db=db,
+                case_id=request.payload.get("case_id", ""),
+                entity_type=EntityType(entity_type) if entity_type else None,
+                limit=request.payload.get("limit", 100),
+                offset=request.payload.get("offset", 0),
+            )
+        elif request.query_type == "get_graph":
+            query = GetGraphQuery(
+                db=db,
+                graph=graph,
+                case_id=request.payload.get("case_id", ""),
+                search_term=request.payload.get("search_term"),
+                entity_type=request.payload.get("entity_type"),
+                center_id=request.payload.get("center_id"),
+                max_depth=request.payload.get("max_depth", 2),
+            )
+        elif request.query_type == "search_evidence":
+            query = SearchEvidenceQuery(
+                db=db,
+                case_id=request.payload.get("case_id", ""),
+                collector=request.payload.get("collector"),
+                search_term=request.payload.get("search_term"),
+                limit=request.payload.get("limit", 50),
+            )
+        elif request.query_type == "get_timeline":
+            query = GetTimelineQuery(
+                db=db,
+                case_id=request.payload.get("case_id", ""),
+                bucket=request.payload.get("bucket", "day"),
+                burst_threshold=request.payload.get("burst_threshold", 2.5),
+            )
+        elif request.query_type == "get_correlations":
+            query = GetCorrelationsQuery(
+                db=db,
+                case_id=request.payload.get("case_id"),
+                entity_types=request.payload.get("entity_types"),
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tipo de query no soportado: {request.query_type}",
+            )
+
+        result = await query.execute()
+        return result.model_dump()
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@cqrs_app.get("/projections/{name}")
+async def get_projection(name: str, case_id: str) -> dict[str, Any]:
+    """
+    Obtiene una proyección materializada.
+
+    Proyecciones disponibles:
+    - graph: Vista materializada del grafo
+    - timeline: Vista materializada del timeline
+    - correlations: Vista materializada de correlaciones
+    """
+    from specter.osint_core.projections import ProjectionManager
+
+    try:
+        manager = ProjectionManager(db, graph)
+        await manager.rebuild_all(case_id)
+
+        projection = manager.get_projection(name, case_id)
+        if not projection:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Proyección '{name}' no encontrada para caso {case_id}",
+            )
+
+        return projection.model_dump()
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ===========================================================================
+# Run Coordinator HTTP endpoints
+# ===========================================================================
+
+
+@cqrs_app.get("/runs")
+async def list_runs(case_id: str | None = None) -> dict[str, Any]:
+    """Lista runs activos o filtrados por caseID."""
+    from specter.osint_core.run_coordinator import coordinator
+
+    runs = coordinator.list_runs(case_id)
+    return {
+        "runs": [
+            {
+                "key": r.key,
+                "case_id": r.case_id,
+                "status": r.status,
+                "priority": r.priority,
+                "created_at": r.created_at,
+                "started_at": r.started_at,
+                "ended_at": r.ended_at,
+                "error": r.error,
+            }
+            for r in runs
+        ],
+        "active": len(coordinator.active()),
+    }
+
+
+@cqrs_app.post("/runs/{key}/interrupt")
+async def interrupt_run(key: str) -> dict[str, Any]:
+    """Interrumpe un run en vuelo."""
+    from specter.osint_core.run_coordinator import coordinator
+
+    result = await coordinator.interrupt(key)
+    return {"interrupted": result, "key": key}
+
+
+# ===========================================================================
+# Snapshot HTTP endpoints
+# ===========================================================================
+
+
+@cqrs_app.get("/cases/{case_id}/snapshots")
+async def list_snapshots(case_id: str) -> dict[str, Any]:
+    """Lista los snapshots de un caso."""
+    from specter.osint_core.snapshot import SnapshotService
+
+    service = SnapshotService(db)
+    snapshots = service.list_snapshots(case_id)
+    return {
+        "snapshots": [s.model_dump() for s in snapshots],
+        "count": len(snapshots),
+    }
+
+
+@cqrs_app.post("/cases/{case_id}/snapshots")
+async def capture_snapshot(
+    case_id: str,
+    description: str = "",
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Captura un snapshot del estado actual del grafo."""
+    from specter.osint_core.snapshot import SnapshotService
+
+    service = SnapshotService(db)
+    snapshot = service.capture(case_id, description, tags)
+    return {
+        "snapshot_id": snapshot.metadata.snapshot_id,
+        "case_id": case_id,
+        "entity_count": snapshot.metadata.entity_count,
+        "relation_count": snapshot.metadata.relation_count,
+        "created_at": snapshot.metadata.created_at,
+    }
+
+
+@cqrs_app.post("/cases/{case_id}/revert")
+async def revert_snapshot(case_id: str, snapshot_id: str) -> dict[str, Any]:
+    """Revierte el grafo de un caso a un snapshot."""
+    from specter.osint_core.snapshot import SnapshotService
+
+    service = SnapshotService(db)
+    snapshot = service.load(snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Snapshot {snapshot_id} no encontrado",
+        )
+
+    result = service.revert(case_id, snapshot)
+    return result
 
 
 def main():

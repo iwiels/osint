@@ -1,0 +1,27 @@
+id: multiple_malicious
+version: 1
+meta:
+  name: "Host reported malicious by multiple sources"
+  description: >
+    An IP, host, or email address was considered malicious by multiple sources.
+    Such cases have a high likelihood of being genuinely malicious and should be
+    urgently investigated. Even if the entity is not compromised, it is likely to
+    be blocked across parts of the Internet due to its presence in these lists.
+  risk: HIGH
+collections:
+  - collect:
+      - method: regex
+        field: type
+        value:
+          - MALICIOUS_*
+          - BLACKLIST_*
+      - method: regex
+        field: data
+        value: "not .*/.*"
+aggregation:
+  field: data
+analysis:
+  - method: threshold
+    field: data
+    minimum: 2
+headline: "Malicious IP: {data}"

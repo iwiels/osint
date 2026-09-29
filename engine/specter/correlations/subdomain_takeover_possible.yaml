@@ -1,0 +1,26 @@
+id: subdomain_takeover_possible
+version: 1
+meta:
+  name: "Subdomain takeover possible"
+  description: >
+    A subdomain points to a service (e.g. GitHub Pages, Heroku, AWS) that is
+    no longer claimed or configured. An attacker could claim the service and
+    take control of the subdomain, potentially hosting malicious content or
+    phishing pages under the target's domain.
+  risk: HIGH
+collections:
+  - collect:
+      - method: exact
+        field: type
+        value: SUBDOMAIN
+      - method: regex
+        field: data
+        value:
+          - ".*github.io.*"
+          - ".*herokuapp.com.*"
+          - ".*s3.amazonaws.com.*"
+          - ".*cloudfront.net.*"
+          - ".*azurewebsites.net.*"
+aggregation:
+  field: data
+headline: "Subdomain takeover possible: {data}"

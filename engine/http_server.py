@@ -61,6 +61,7 @@ from specter.osint_core.database import Database
 from specter.osint_core.models import (
     AgentRunResult,
     CaseCreatedOut,
+    CollectorResult,
     GraphSubgraph,
     HealthOut,
     SessionDetailOut,
@@ -70,7 +71,11 @@ from specter.osint_core.models import (
 )
 
 from engine import ENGINE_VERSION
-from engine.registry import call_tool_validated, get_registry_tools, get_tool_schemas
+from engine.registry import (
+    call_tool_validated,
+    get_registry_tools,
+    get_tool_schemas,
+)
 
 # ------------------------------------------------------------------
 # Estado central del motor (instancia única, como opencode hace con
@@ -312,9 +317,19 @@ async def health() -> dict[str, Any]:
     }
 
 
+# ------------------------------------------------------------------
+# Tools: contrato MCP (superficie pública que consumen SDK y UI)
+# ------------------------------------------------------------------
+
+
 @app.get("/tools")
 async def list_tools() -> dict[str, Any]:
-    """Registry unificado: tools MCP expuestas con su schema JSON."""
+    """Registry unificado: tools MCP expuestas con su schema JSON.
+
+    Este es el contrato estable: lo consumen `WraithClient.listTools()` del
+    SDK y la vista de ajustes. El Tool Registry (permisos/categorías) vive
+    bajo `/tool-registry/` para no mezclarse con este.
+    """
     return {
         "tools": [
             {
@@ -324,6 +339,112 @@ async def list_tools() -> dict[str, Any]:
             }
             for t in await get_tool_schemas()
         ]
+    }
+
+
+# ------------------------------------------------------------------
+# Tool Registry: descubrimiento y materialización por permisos
+# (endpoints propios, bajo /tool-registry para no chocar con /tools)
+# ------------------------------------------------------------------
+
+
+@app.get("/tool-registry/tools")
+async def list_tool_registry() -> dict[str, Any]:
+    """Lista todas las tools registradas en el Tool Registry."""
+    from specter.osint_core.tool_registry import tool_registry
+
+    tools = tool_registry.list_tools()
+    return {
+        "total": len(tools),
+        "tools": [
+            {
+                "name": t.name,
+                "description": t.description,
+                "permission": t.permission.value if t.permission else None,
+                "category": t.category.value,
+            }
+            for t in tools
+        ],
+    }
+
+
+@app.get("/tool-registry/tools/{tool_name}")
+async def get_tool(tool_name: str) -> dict[str, Any]:
+    """Obtiene una tool específica del Tool Registry."""
+    from specter.osint_core.tool_registry import tool_registry
+
+    try:
+        return tool_registry.get_schema(tool_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' no existe") from exc
+
+
+class MaterializeRequest(BaseModel):
+    permissions: list[str] = Field(default_factory=list)
+
+
+@app.post("/tool-registry/materialize")
+async def materialize_tools(body: MaterializeRequest) -> dict[str, Any]:
+    """Materializa tools filtradas por permisos del solicitante."""
+    from specter.osint_core.tool_registry import ToolPermission, tool_registry
+
+    try:
+        perms = {ToolPermission(p) for p in body.permissions}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Permiso inválido: {exc}") from exc
+
+    tools = tool_registry.materialize(perms)
+    return {
+        "total": len(tools),
+        "permissions": [p.value for p in perms],
+        "tools": [
+            {
+                "name": t.name,
+                "description": t.description,
+                "permission": t.permission.value if t.permission else None,
+                "category": t.category.value,
+            }
+            for t in tools
+        ],
+    }
+
+
+# ------------------------------------------------------------------
+# Compaction: compactación de resultados de colectores
+# ------------------------------------------------------------------
+
+
+@app.post("/compact")
+async def compact_result(body: CollectorResult) -> dict[str, Any]:
+    """Compacta un resultado de colector para reducir el tamaño del contexto.
+
+    Preserva hallazgos clave, guarda evidencia completa en disco y crea
+    referencias URI para recuperar la información original.
+    """
+    from specter.osint_core.compaction import compaction_service
+
+    if not compaction_service.should_compact(body):
+        return {
+            "compacted": False,
+            "reason": "Resultado por debajo del umbral de compactación",
+            "entities": len(body.entities),
+            "relations": len(body.relations),
+        }
+
+    compacted = compaction_service.compact_collector_result(body)
+    return {
+        "compacted": True,
+        "collector_name": compacted.collector_name,
+        "source_target": compacted.source_target,
+        "entities_count": len(compacted.entities),
+        "relations_count": len(compacted.relations),
+        "raw_payload_ref": compacted.raw_payload_ref,
+        "summary": compacted.summary,
+        "original_size_bytes": compacted.original_size_bytes,
+        "compacted_size_bytes": compacted.compacted_size_bytes,
+        "compression_ratio": round(
+            compacted.compacted_size_bytes / max(compacted.original_size_bytes, 1), 2
+        ),
     }
 
 
@@ -479,6 +600,69 @@ async def case_attestation(case_id: str) -> dict[str, Any]:
     from specter.osint_core.ledger import ForensicLedger
 
     return ForensicLedger(db).attest_case(case_id)
+
+
+# ------------------------------------------------------------------
+# Event Sourcing: eventos inmutables y replay de estado
+# ------------------------------------------------------------------
+
+
+@app.get("/cases/{case_id}/events")
+async def case_events(case_id: str, after: int | None = None) -> dict[str, Any]:
+    """Eventos de un caso (ordenados por secuencia).
+
+    Args:
+        case_id: ID del caso
+        after: Secuencia desde la cual obtener eventos (exclusivo)
+    """
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    from specter.osint_core.event_store import EventStore
+
+    store = EventStore(db)
+    events = store.get_events(case_id, after=after)
+    return {
+        "case_id": case_id,
+        "total_events": len(events),
+        "events": [e.model_dump() for e in events],
+    }
+
+
+@app.get("/cases/{case_id}/events/replay")
+async def case_events_replay(case_id: str, after: int | None = None) -> dict[str, Any]:
+    """Replay de eventos para reconstruir el estado de un caso.
+
+    Reproduce la secuencia ordenada de eventos y devuelve el estado actual
+    del caso basado en los eventos ocurridos.
+
+    Args:
+        case_id: ID del caso
+        after: Secuencia desde la cual hacer replay (exclusivo)
+    """
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    from specter.osint_core.event_store import EventStore
+
+    store = EventStore(db)
+    return store.replay(case_id, after=after)
+
+
+@app.get("/events/audit")
+async def all_events() -> dict[str, Any]:
+    """Todos los eventos del sistema (auditoría global).
+
+    Ruta separada de `/events` a propósito: ese path lo ocupa el stream SSE
+    del bus (`text/event-stream`). Si ambos compartieran path, ganaría el
+    primero registrado y el EventSource recibiría JSON, no el stream.
+    """
+    from specter.osint_core.event_store import EventStore
+
+    store = EventStore(db)
+    events = store.get_all_events()
+    return {
+        "total_events": len(events),
+        "events": [e.model_dump() for e in events],
+    }
 
 
 # ------------------------------------------------------------------
@@ -648,6 +832,93 @@ async def agent_run(body: AgentRunRequest) -> dict[str, Any]:
     return result
 
 
+# ------------------------------------------------------------------
+# Run Coordinator: gestión de runs coordinados por sesión
+# ------------------------------------------------------------------
+
+from specter.osint_core.run_coordinator import coordinator as run_coordinator
+
+
+@app.get("/runs")
+async def list_runs(case_id: str | None = None) -> dict[str, Any]:
+    """Lista runs activos del coordinador."""
+    runs = run_coordinator.list_runs(case_id)
+    return {
+        "runs": [
+            {
+                "key": r.key,
+                "case_id": r.case_id,
+                "status": r.status.value,
+                "priority": r.priority.value,
+                "created_at": r.created_at,
+                "started_at": r.started_at,
+                "ended_at": r.ended_at,
+                "error": r.error,
+            }
+            for r in runs
+        ]
+    }
+
+
+@app.post("/runs/{key}/interrupt")
+async def interrupt_run(key: str) -> dict[str, Any]:
+    """Interrumpe un run en vuelo."""
+    result = await run_coordinator.interrupt(key)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Run {key} no existe o no está activo")
+    return {"status": "ok", "key": key, "cancelled": True}
+
+
+# ------------------------------------------------------------------
+# Snapshots: captura, diff y revert del grafo forense
+# ------------------------------------------------------------------
+
+from specter.osint_core.snapshot import SnapshotService
+
+snapshot_service = SnapshotService(db)
+
+
+@app.get("/cases/{case_id}/snapshots")
+async def list_snapshots(case_id: str) -> dict[str, Any]:
+    """Lista los snapshots de un caso."""
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    snapshots = snapshot_service.list_snapshots(case_id)
+    return {
+        "case_id": case_id,
+        "snapshots": [s.model_dump() for s in snapshots],
+    }
+
+
+@app.post("/cases/{case_id}/snapshots")
+async def capture_snapshot(
+    case_id: str, description: str = "", tags: list[str] | None = None
+) -> dict[str, Any]:
+    """Captura un snapshot del estado actual del grafo."""
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    snapshot = snapshot_service.capture(case_id, description=description, tags=tags)
+    return {
+        "status": "CAPTURED",
+        "snapshot_id": snapshot.metadata.snapshot_id,
+        "case_id": case_id,
+        "entity_count": snapshot.metadata.entity_count,
+        "relation_count": snapshot.metadata.relation_count,
+    }
+
+
+@app.post("/cases/{case_id}/revert")
+async def revert_snapshot(case_id: str, snapshot_id: str) -> dict[str, Any]:
+    """Revierte el grafo de un caso a un snapshot anterior."""
+    if not db.get_case(case_id):
+        raise HTTPException(status_code=404, detail=f"Caso {case_id} no existe")
+    snapshot = snapshot_service.load(snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} no existe")
+    result = snapshot_service.revert(case_id, snapshot)
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Specter Engine HTTP server")
     parser.add_argument("--host", default="127.0.0.1")
@@ -680,6 +951,11 @@ def main() -> None:
 
     import uvicorn
 
+    # El log de acceso de uvicorn se silencia a propósito: la UI consulta
+    # /health y /cases cada 3,5s para detectar caídas del motor, y con
+    # `access_log=True` eso generaba cientos de líneas que tapaban los avisos
+    # que importan (colectores, correlaciones, errores del agente). Los
+    # errores y avisos del motor siguen saliendo: eso va por stderr.
     if args.reload:
         # Con import string para que el reloader observe el paquete.
         uvicorn.run(
@@ -689,9 +965,10 @@ def main() -> None:
             log_level="info",
             reload=True,
             reload_dirs=[str(_ENGINE_SRC)],
+            access_log=False,
         )
     else:
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info", access_log=False)
 
 
 if __name__ == "__main__":
