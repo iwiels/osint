@@ -22,6 +22,7 @@ import json
 import re
 import unicodedata
 from typing import Any
+from urllib.parse import urlparse
 
 from specter.collectors.base import BaseCollector
 from specter.collectors.web import WebSearchCollector
@@ -34,11 +35,9 @@ from specter.osint_core.models import (
 )
 
 _ACADEMIC_KEYWORDS = (
-    
     "universidad",
     "facultad",
     "estudiante",
-    
     "tesis",
     "docente",
     "grado",
@@ -46,6 +45,20 @@ _ACADEMIC_KEYWORDS = (
     "alumno",
 )
 _DOC_HOSTS = ("scribd", "academia.edu", "researchgate", "cybertesis", "repositorio")
+
+
+def _institution_from_url(url: str) -> str:
+    """Nombre de institución derivado del host del hallazgo.
+
+    No se hardcodea ninguna universidad: el colector debe servir para cualquier
+    país o institución. Antes había un caso especial para una universidad
+    concreta, que ataba el motor a un único caso de uso y sesgaba el resto.
+    """
+    host = urlparse(url).netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host or "Institución académica"
+
 
 # ---------------------------------------------------------------------------
 # Derivación de usernames a partir de un nombre completo
@@ -373,11 +386,7 @@ class PersonInvestigator(BaseCollector):
 
                     # Detectar instituciones académicas
                     if any(kw in combined for kw in _ACADEMIC_KEYWORDS):
-                        inst_name = (
-                            "UNMSM"
-                            if "unmsm" in combined or "san marcos" in combined
-                            else "Institución Universitaria"
-                        )
+                        inst_name = _institution_from_url(url)
                         inst_key = (EntityType.ORGANIZATION, inst_name)
                         if inst_key not in seen_entity_keys:
                             seen_entity_keys.add(inst_key)

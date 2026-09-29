@@ -32,6 +32,12 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   igualmente. Se eliminaron también `engine/data/specter_osint.db` (una base de
   datos de caso vacía, pero artefacto de runtime que nunca debió versionarse) y
   `.coverage`.
+- **Eliminado el hardcode de una universidad concreta** en
+  `collectors/person.py`: la detección de instituciones académicas tenía un caso
+  especial para una universidad real, lo que ataba el colector a un único caso
+  de uso y dejaba entrever el objetivo de la investigación. Ahora el nombre de
+  la institución se deriva del host del hallazgo y sirve para cualquier país.
+  Los fixtures de test que usaban ese dominio real pasan a `universidad.test`.
 - Anonimizados tests y docstrings: toda persona de ejemplo es sintética
   (`Carlos Andres Mendoza Garcia`, `cmendozagarcia@ejemplo.test`).
 - Eliminados datos de investigación real del repositorio (base de datos de caso,

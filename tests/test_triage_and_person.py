@@ -132,7 +132,7 @@ async def test_person_collector_with_active_search(temp_db):
                 "https://universidad.test/estudiantes/carlos-mendoza",
                 attributes={
                     "title": "Carlos Andres Mendoza Garcia - Universidad Base 22",
-                    "snippet": "Estudiante de ingeniería de sistemas en la universidad.",
+                    "snippet": "Estudiante de ingeniería de sistemas.",
                 },
             ),
             EntityNode.create(
@@ -163,8 +163,12 @@ async def test_person_collector_with_active_search(temp_db):
     ):
         res = await collector.collect("Carlos Andres Mendoza Garcia", execute_search=True)
 
+        # El nombre de la institución se deriva del host del hallazgo: el
+        # colector no conoce ninguna universidad concreta.
         academic_orgs = [
-            e for e in res.entities if e.type == EntityType.ORGANIZATION and e.value == "universidad.test"
+            e
+            for e in res.entities
+            if e.type == EntityType.ORGANIZATION and e.value == "universidad.test"
         ]
         assert len(academic_orgs) == 1
         assert any(
