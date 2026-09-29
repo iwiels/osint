@@ -118,6 +118,11 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   `upload-artifact` y `download-artifact` no conservan los permisos y la app lanza
   el binario sin restaurarlos; el release ejecuta `chmod +x` tras descargar el
   artefacto.
+- **El motor de macOS Intel no arrancaba.** `cryptography` (llega por `mcp`) dejó de
+  publicar wheels de macOS x86_64 en la 49, así que en ese runner pip la compilaba
+  contra el OpenSSL del runner y PyInstaller empaquetaba otro `libssl`. El smoke test
+  del binario lo detectó antes de generar el instalador; el release fija
+  `cryptography<49` solo en ese runner.
 - **La CI no instalaba `pytest-asyncio`**: todos los tests `async` fallaban y la
   cobertura caía al 42 %. Ahora se instala en CI y en la guía de contribución, y
   `pyproject.toml` lo declara en `required_plugins` para abortar con un mensaje
