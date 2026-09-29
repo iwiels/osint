@@ -42,9 +42,9 @@ jobs:
           - os: macos-latest # Apple Silicon → binario arm64
             target: mac-arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -59,7 +59,7 @@ jobs:
         run: python scripts/build-engine.py
 
       - name: Subir binario del motor
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: engine-${{ matrix.target }}
           # El nombre real del binario es wraith-engine(.exe): si el script
@@ -94,15 +94,15 @@ jobs:
             target: mac-arm64
             dist: --mac --arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
 
       - name: Descargar el binario del motor
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: engine-${{ matrix.target }}
           path: dist-engine
@@ -122,7 +122,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Subir instaladores
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installers-${{ matrix.target }}
           path: |
@@ -141,14 +141,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Descargar todos los instaladores
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: installers-*
           merge-multiple: true
           path: release-assets
 
       - name: Publicar en GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release-assets/*
           generate_release_notes: true
