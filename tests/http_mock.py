@@ -326,7 +326,13 @@ def _patch_curl_session(monkeypatch: Any, router: MockRouter) -> None:
 
 
 def patch_dns(monkeypatch: Any, zone: dict[str, Any] | None = None) -> FakeDNS:
-    """Sustituye `dns.resolver.Resolver` por una zona en memoria."""
+    """Sustituye `dns.resolver.Resolver` y `dns.asyncresolver.Resolver`.
+
+    OJO: `dns.asyncresolver.Resolver` NO es subclase de `dns.resolver.Resolver`
+    (hereda de `BaseResolver`), así que parchear sólo una de las dos deja a los
+    colectores async resolviendo contra internet real: el test "pasa" mientras
+    la red responda y se vuelve flaky bajo carga de la suite.
+    """
     fake = FakeDNS(zone)
 
     class _FakeResolver:
@@ -337,7 +343,12 @@ def patch_dns(monkeypatch: Any, zone: dict[str, Any] | None = None) -> FakeDNS:
         def resolve(self, name: Any, rdtype: str = "A", **kwargs: Any) -> list[_FakeAnswer]:
             return fake.resolve(name, rdtype, **kwargs)
 
+    class _FakeAsyncResolver(_FakeResolver):
+        async def resolve(self, name: Any, rdtype: str = "A", **kwargs: Any) -> list[_FakeAnswer]:
+            return fake.resolve(name, rdtype, **kwargs)
+
     monkeypatch.setattr(dns.resolver, "Resolver", _FakeResolver)
+    monkeypatch.setattr(dns.asyncresolver, "Resolver", _FakeAsyncResolver)
     return fake
 
 

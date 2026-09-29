@@ -53,9 +53,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import random
 import re
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import quote_plus, urlsplit
 
@@ -69,13 +72,24 @@ from specter.netguard import assert_public_http_url
 
 logger = logging.getLogger("specter.stealth_browser")
 
-SEARCH_TIMEOUT_MS = 25_000
+# Navegación de una SERP: 12s, no 25s. Una página de resultados carga rápido o
+# no carga; esperar 25s por motor sólo consume el presupuesto del llamante. Con
+# este valor el peor caso por motor queda en ~15s (12 + settle + parse), que es
+# lo que permite que quepa dentro del `wait_for` de `parallel_search`.
+SEARCH_TIMEOUT_MS = 12_000
 NAVIGATE_TIMEOUT_MS = 30_000
 SETTLE_DELAY_S = 1.2
 SNAPSHOT_MAX_CHARS = 25_000
 SNAPSHOT_MAX_LINKS = 100
 BROWSER_RESTARTS_WINDOW_S = 60.0
 BROWSER_MAX_RESTARTS = 3
+
+# Canal de Chrome a lanzar: "", "chrome", "msedge", "chrome-beta"...
+# Vacío = Chromium empaquetado por Playwright (portable, pero con huella
+# TLS/HTTP2 más fácil de firmar). Con "chrome" se usa el Chrome real del
+# sistema, que es indistinguible de una instalación normal. Si el canal
+# indicado no está instalado, se cae al Chromium empaquetado.
+BROWSER_CHANNEL = (os.environ.get("WRAITH_BROWSER_CHANNEL") or "").strip()
 
 # ---------------------------------------------------------------------------
 # Huellas de navegador COMPLETAS y coherentes.
@@ -349,25 +363,69 @@ _GOOGLE_PARSE = """
 }
 """
 
+# Bing. Dos detalles del markup real que rompían el parser anterior:
+#  1. `innerText` viene VACÍO: Bing oculta el texto del título con CSS, así que
+#     hay que leer `textContent` (si no, el filtro `if (!title) continue`
+#     descartaba los 10 resultados y devolvía status "parse_error").
+#  2. El href es un redirect `bing.com/ck/a?...&u=<base64url>&ntb=1`. El
+#     destino real va codificado en `u=` con el prefijo de versión `a1`
+#     (p.ej. `a1aHR0cHM6Ly9vcGVuYWkuY29tLw` -> `https://openai.com/`). Antes
+#     sólo se miraba el <cite>, que también devuelve innerText vacío.
 _BING_PARSE = """
 () => {
-  const items = Array.from(document.querySelectorAll('li.b_algo'));
-  return items.map(li => {
-    const a = li.querySelector('h2 a');
-    const p = li.querySelector('.b_caption p, .b_algoSlug, p');
-    const cite = li.querySelector('cite');
-    let url = a ? a.href : '';
-    if (url.includes('bing.com/ck/') && cite) {
-      const real = (cite.innerText || '').trim().split(' ')[0];
-      if (real.startsWith('http')) url = real;
-      else if (real) url = 'https://' + real.replace(/^https?:\\/\\//, '');
+  const text = (el) => el ? ((el.textContent || '') + ' ' + (el.innerText || '')).trim() : '';
+
+  // Resuelve el destino real de un redirect bing.com/ck/a.
+  const decodeBingUrl = (href) => {
+    if (!href) return '';
+    if (!href.includes('bing.com/ck/')) return href;
+    try {
+      const u = new URL(href).searchParams.get('u');
+      if (u) {
+        let payload = u;
+        if (payload.startsWith('a1')) payload = payload.slice(2);
+        // base64url -> base64: - _ y sin padding
+        payload = payload.replace(/-/g, '+').replace(/_/g, '/');
+        while (payload.length % 4) payload += '=';
+        const decoded = atob(payload);
+        if (/^https?:\\/\\//i.test(decoded)) return decoded;
+      }
+    } catch (_) { /* cae al <cite> */ }
+    return '';
+  };
+
+  const items = Array.from(document.querySelectorAll('li.b_algo, .b_algo, div.b_algo'));
+  const out = [];
+  for (const li of items) {
+    const titleEl =
+      li.querySelector('h2 a') ||
+      li.querySelector('h2 .tilk') ||
+      li.querySelector('.tptt') ||
+      li.querySelector('a.tilk') ||
+      li.querySelector('h2');
+    if (!titleEl) continue;
+    const title = text(titleEl);
+    if (!title) continue;
+
+    let url = decodeBingUrl(titleEl.href || titleEl.getAttribute('href') || '');
+    if (!url) {
+      // Fallback: el <cite> muestra el dominio real de forma legible.
+      const cite = text(li.querySelector('cite')).split(' ')[0];
+      if (cite && /^https?:\\/\\//i.test(cite)) url = cite;
+      else if (/^[A-Za-z0-9.-]+[.][A-Za-z]{2,}$/.test(cite)) url = 'https://' + cite;
     }
-    return {
-      title: (a ? a.innerText || a.textContent : '').trim(),
-      url,
-      snippet: (p ? p.innerText || p.textContent : '').trim(),
-    };
-  }).filter(r => r.title.length > 0 && r.url.startsWith('http') && !r.url.includes('bing.com/ck/'));
+    if (!url.startsWith('http')) continue;
+    if (url.includes('bing.com/ck/')) continue;
+    if (url.includes('go.microsoft.com/fwlink')) continue;
+
+    const snipEl =
+      li.querySelector('.b_caption p') ||
+      li.querySelector('.b_algoSlug') ||
+      li.querySelector('.b_snippet') ||
+      li.querySelector('p');
+    out.push({ title, url, snippet: text(snipEl) });
+  }
+  return out;
 }
 """
 
@@ -384,6 +442,29 @@ _DDG_PARSE = """
       } catch (_) { url = href; }
     }
     const snipEl = a.closest('div')?.querySelector('.result__snippet');
+    out.push({
+      title: (a.innerText || a.textContent || '').trim(),
+      url,
+      snippet: (snipEl ? snipEl.innerText || snipEl.textContent : '').trim(),
+    });
+  }
+  return out.filter(r => r.title.length > 0 && r.url.startsWith('http'));
+}
+"""
+
+# Mojeek: motor independiente, sin captcha y con markup estable. Existe como
+# red de seguridad cuando Google da captcha y DuckDuckGo/Bing se bloquean o
+# cambian el HTML. Es la recomendación habitual en herramientas de OSINT
+# (SearXNG y los scrapers profesionales lo usan como motor secundario).
+_MOJEEK_PARSE = """
+() => {
+  const out = [];
+  const nodes = document.querySelectorAll('ul.results-standard li, li.result, div.result');
+  for (const li of nodes) {
+    const a = li.querySelector('a.title') || li.querySelector('h2 a') || li.querySelector('a[href]');
+    if (!a) continue;
+    const url = a.href || '';
+    const snipEl = li.querySelector('p.s') || li.querySelector('p');
     out.push({
       title: (a.innerText || a.textContent || '').trim(),
       url,
@@ -422,16 +503,39 @@ _SNAPSHOT_SCRIPT = """
 
 
 class StealthBrowser:
-    """Navegador Chromium sigiloso compartido (singleton asíncrono por proceso)."""
+    """Navegador Chromium sigiloso compartido (singleton asíncrono por proceso).
+
+    DISEÑO (un navegador, muchos contextos)
+
+    El proceso de Chromium es el recurso caro y se comparte. Cada operación
+    de red (búsqueda, navegación, captura, interacción) pide su PROPIO
+    `BrowserContext`, que es barato y está aislado: cookies, storage y rutas.
+
+    Antes había un único `self._context` compartido por todas las operaciones.
+    Con `parallel_search` (5 consultas × 3 motores = 15 operaciones
+    simultáneas) eso provocaba una cascada: un solo fallo llamaba a
+    `_restart()`, que cerraba el contexto compartido y mataba las 14
+    operaciones en vuelo con "Target page, context or browser has been
+    closed". Con contextos por operación, un fallo sólo destruye su propio
+    contexto.
+
+    Ésta es la recomendación oficial de Playwright y el patrón que usan los
+    scrapeadores profesionales: navegador único y reutilizable, contextos
+    efímeros y aislados.
+    """
 
     def __init__(self) -> None:
         self._pw: Any = None
         self._browser: Any = None
-        self._context: Any = None
         self._lock = asyncio.Lock()
         self._restart_times: list[float] = []
         self._fp_index = 0
         self._fingerprint: dict[str, Any] = FINGERPRINTS[0]
+        # Contextos vivos, para poder cerrarlos todos si el navegador muere.
+        self._live_contexts: set[Any] = set()
+        # Huella efectiva cacheada (UA real + client hints coherentes).
+        # Se invalida cuando se reconstruye el proceso del navegador.
+        self._resolved_fp: dict[str, Any] | None = None
 
     # ------------------------------------------------------- propiedades API
     @property
@@ -449,14 +553,16 @@ class StealthBrowser:
 
     @property
     def is_ready(self) -> bool:
-        return self._context is not None
+        """El proceso de Chromium está vivo (puede aceptar contextos nuevos)."""
+        return self._browser is not None
 
     # ------------------------------------------------------------------ ciclo
     async def _ensure(self) -> None:
-        if self._context is not None:
+        """Garantiza que el proceso de Chromium está vivo (no crea contexto)."""
+        if self._browser is not None:
             return
         async with self._lock:
-            if self._context is not None:
+            if self._browser is not None:
                 return
             fp = FINGERPRINTS[self._fp_index % len(FINGERPRINTS)]
             self._fingerprint = fp
@@ -468,6 +574,12 @@ class StealthBrowser:
             self._pw = await async_playwright().start()
             self._browser = await self._pw.chromium.launch(
                 headless=True,
+                # Chrome/Edge REAL si está instalado y el env lo pide.
+                # El Chromium empaquetado por Playwright tiene una huella TLS
+                # y HTTP2 reconocible; el Chrome de verdad, no. Es el mismo
+                # motivo por el que chrome-devtools-mcp lanza `channel: chrome`
+                # en lugar del Chromium de Puppeteer.
+                channel=BROWSER_CHANNEL or None,
                 args=[
                     # El único flag "anti-detección" con valor real y bajo coste
                     # de huella; el driver (patchright) hace el resto.
@@ -480,32 +592,133 @@ class StealthBrowser:
                     "--use-angle=default",
                 ],
             )
-            # Cabeceras COHERENTES con la huella en TODA petición HTTP del
-            # contexto (documento, XHR, fetch). Sec-CH-UA declara la misma
-            # versión que el UA: un mismatch aquí es la delación más común.
-            self._context = await self._browser.new_context(
-                user_agent=fp["ua"],
-                locale=fp["locale"],
-                timezone_id=fp["tz"],
-                viewport=fp["viewport"],
-                device_scale_factor=1,
-                service_workers="block",
-                extra_http_headers={
-                    "Accept-Language": fp["accept_language"],
-                    "sec-ch-ua": fp["sec_ch_ua"],
-                    "sec-ch-ua-mobile": "?0",
-                    "sec-ch-ua-platform": fp["sec_ch_ua_platform"],
-                },
-                storage_state=None,
-            )
-            await self._context.add_init_script(_stealth_init_script(fp))
-            await self._context.route("**/*", _guard_browser_request)
-            await self._context.route_web_socket("**/*", _guard_browser_websocket)
             logger.info("stealth-browser: Chromium listo (huella %s)", fp["label"])
 
+    async def _real_user_agent(self) -> str:
+        """Lee el User-Agent REAL del navegador recién lanzado.
+
+        Es la fuente de verdad: el UA y los client hints se derivan de aquí en
+        vez de hardcodear una versión que se queda obsoleta sola.
+        """
+        browser = self._browser
+        if browser is None:  # pragma: no cover - _ensure garantiza lo contrario
+            return USER_AGENT
+        probe = await browser.new_context()
+        try:
+            page = await probe.new_page()
+            await page.goto("about:blank")
+            real = await page.evaluate("() => navigator.userAgent")
+            return real if isinstance(real, str) and real else USER_AGENT
+        except Exception:  # pragma: no cover - sonda best-effort
+            logger.debug("stealth-browser: no se pudo leer el UA real; se usa el de la plantilla")
+            return USER_AGENT
+        finally:
+            with contextlib.suppress(Exception):
+                await probe.close()
+
+    @staticmethod
+    def _coherent_client_hints(real_ua: str) -> tuple[str, str, str]:
+        """Deriva (sec_ch_ua, major, mobile) coherentes con el UA real.
+
+        Un `sec-ch-ua` que no cuadra con la versión real de Chromium (y con su
+        huella TLS/HTTP2) es una delación trivial: por eso el número sale del
+        navegador, no de una constante.
+        """
+        # "... Chrome/153.0.8010.12 ..." -> "153"
+        match = re.search(r"(?:HeadlessChrome|Chrome)/(\d+)", real_ua)
+        major = match.group(1) if match else "131"
+        sec_ch_ua = f'"Chromium";v="{major}", "Not_A Brand";v="24", "Google Chrome";v="{major}"'
+        mobile = "?1" if "Mobile" in real_ua else "?0"
+        return sec_ch_ua, major, mobile
+
+    async def _resolve_fingerprint(self) -> dict[str, Any]:
+        """Huella efectiva = plantilla de locale/timezone + UA real del motor.
+
+        La plantilla decide *dónde* parece estar el navegador (locale, zona
+        horaria, viewport); la versión y el UA los decide el motor real. Así
+        una actualización de Chromium no convierte la "coherencia" en una
+        mentira (lo que pasaba con el Chrome/131 fijo frente a un Chromium
+        153 real: 22 versiones de desfase en el primer request).
+
+        El resultado se cachea por proceso de navegador: sondear el UA abre
+        un contexto desechable, y hacerlo en cada operación sería tirar
+        contextos (y generar churn, que también es una señal).
+        """
+        if self._resolved_fp is not None:
+            return self._resolved_fp
+        real_ua = await self._real_user_agent()
+        # Única mentira: tapar el token "Headless". La versión se mantiene
+        # real, que es lo que la hace indistinguible del resto de la huella.
+        ua = real_ua.replace("HeadlessChrome/", "Chrome/").replace("Headless", "")
+        sec_ch_ua, major, mobile = self._coherent_client_hints(real_ua)
+        resolved = dict(self._fingerprint)
+        resolved["ua"] = ua
+        resolved["sec_ch_ua"] = sec_ch_ua
+        resolved["sec_ch_ua_mobile"] = mobile
+        resolved["major_version"] = major
+        resolved["real_ua"] = real_ua
+        self._resolved_fp = resolved
+        return resolved
+
+    async def _new_context(self) -> Any:
+        """Crea un contexto AISLADO con la huella vigente y las rutas de seguridad.
+
+        Se registra en `_live_contexts` para poder limpiarlo si el navegador
+        muere. El llamante es responsable de cerrarlo (preferiblemente con
+        `_context_scope()`).
+        """
+        await self._ensure()
+        browser = self._browser
+        if browser is None:  # pragma: no cover - _ensure garantiza lo contrario
+            raise RuntimeError("Chromium no disponible")
+        # La huella se resuelve con el UA REAL del navegador: la plantilla
+        # aporta locale/timezone/viewport y el motor aporta la versión, para
+        # que UA y client hints no puedan contradecirse.
+        fp = await self._resolve_fingerprint()
+        context = await browser.new_context(
+            user_agent=fp["ua"],
+            locale=fp["locale"],
+            timezone_id=fp["tz"],
+            viewport=fp["viewport"],
+            device_scale_factor=1,
+            service_workers="block",
+            extra_http_headers={
+                "Accept-Language": fp["accept_language"],
+                "sec-ch-ua": fp["sec_ch_ua"],
+                "sec-ch-ua-mobile": fp["sec_ch_ua_mobile"],
+                "sec-ch-ua-platform": fp["sec_ch_ua_platform"],
+            },
+            storage_state=None,
+        )
+        self._live_contexts.add(context)
+        with contextlib.suppress(Exception):
+            await context.add_init_script(_stealth_init_script(fp))
+            await context.route("**/*", _guard_browser_request)
+            await context.route_web_socket("**/*", _guard_browser_websocket)
+        return context
+
+    @asynccontextmanager
+    async def _context_scope(self) -> AsyncIterator[Any]:
+        """Context manager: contexto aislado por operación, cerrado al salir.
+
+        Garantiza el cierre aunque la operación lance, y sólo afecta a esta
+        operación: el resto de contextos en vuelo siguen intactos.
+        """
+        context = await self._new_context()
+        try:
+            yield context
+        finally:
+            self._live_contexts.discard(context)
+            with contextlib.suppress(Exception):
+                await context.close()
+
     async def _shutdown_locked(self) -> None:
-        """Cierra navegador y driver. Debe llamarse con el lock tomado."""
-        for attr in ("_context", "_browser"):
+        """Cierra contextos vivos, navegador y driver. Lock tomado por el llamante."""
+        for context in list(self._live_contexts):
+            with contextlib.suppress(Exception):
+                await context.close()
+        self._live_contexts.clear()
+        for attr in ("_browser",):
             obj = getattr(self, attr, None)
             if obj is not None:
                 with contextlib.suppress(Exception):
@@ -515,13 +728,53 @@ class StealthBrowser:
             with contextlib.suppress(Exception):
                 await self._pw.stop()
             self._pw = None
+        # El proceso anterior ya no es la fuente de verdad del UA.
+        self._resolved_fp = None
 
     async def stop(self) -> None:
         async with self._lock:
             await self._shutdown_locked()
 
+    @staticmethod
+    def _is_browser_death(exc: BaseException) -> bool:
+        """¿El error indica que el NAVEGADOR murió, o sólo que falló la red?
+
+        Sólo el navegador muerto justifica reiniciarlo. Un timeout de red, un
+        DNS caído o un 5xx son fallos del destino: reiniciar Chromium no
+        arregla nada y, antes, destruía el trabajo de las demás operaciones.
+        """
+        message = str(exc).lower()
+        death_markers = (
+            "target page, context or browser has been closed",
+            "target closed",
+            "browser has been closed",
+            "browser closed",
+            "connection closed",
+            "browser has disconnected",
+            "websocket closed",
+        )
+        if any(marker in message for marker in death_markers):
+            return True
+        # Playwright lanza este tipo de error cuando el proceso del navegador
+        # se cae; el nombre de la clase es más fiable que el texto.
+        return type(exc).__name__ in ("TargetClosedError", "BrowserTypeError")
+
+    async def _recover(self, exc: BaseException) -> bool:
+        """Reconstruye el navegador sólo si ha muerto. Devuelve si reinició.
+
+        Un error de red se propaga al llamante sin tocar el navegador.
+        """
+        if not self._is_browser_death(exc):
+            return False
+        try:
+            await self._restart()
+            return True
+        except RuntimeError as rb:
+            logger.warning("stealth-browser: %s", rb)
+            return False
+
     async def _restart(self) -> None:
-        """Recrea el navegador (caída del proceso Chromium, context muerto…)."""
+        """Recrea el proceso de Chromium (sólo cuando ha muerto de verdad)."""
         now = time.monotonic()
         self._restart_times = [
             t for t in self._restart_times if now - t < BROWSER_RESTARTS_WINDOW_S
@@ -533,21 +786,31 @@ class StealthBrowser:
             )
         self._restart_times.append(now)
         logger.warning(
-            "stealth-browser: reiniciando navegador (intento %d)…", len(self._restart_times)
+            "stealth-browser: navegador muerto, reiniciando (intento %d)…",
+            len(self._restart_times),
         )
-        await self._shutdown_locked()
+        async with self._lock:
+            await self._shutdown_locked()
         await self._ensure()
 
     def rotate_fingerprint(self) -> dict[str, Any]:
-        """Rota la huella para la PRÓXIMA sesión (combinar con recycle_context)."""
+        """Rota la huella para el PRÓXIMO contexto (combinar con recycle_context)."""
         self._fp_index += 1
         self._fingerprint = FINGERPRINTS[self._fp_index % len(FINGERPRINTS)]
         return self._fingerprint
 
     async def recycle_context(self) -> None:
-        """Cierra contexto y navegador aplicando la huella rotada en el próximo arranque."""
+        """Cierra los contextos vivos; la huella rotada se aplica al siguiente.
+
+        Con contextos efímeros esto ya no es un ciclo de vida heavyweight:
+        basta con soltar los contextos abiertos para que la huella nueva
+        entre en vigor en la siguiente operación.
+        """
         async with self._lock:
-            await self._shutdown_locked()
+            for context in list(self._live_contexts):
+                with contextlib.suppress(Exception):
+                    await context.close()
+            self._live_contexts.clear()
 
     # ------------------------------------------------------------ navegación
     async def search(
@@ -572,9 +835,12 @@ class StealthBrowser:
             raise ValueError("Consulta vacía")
         top_k = max(1, min(int(top_k), 20))
 
+        # `markup_selector` sirve para distinguir "no hay resultados" de
+        # "hay resultados pero el parser no los extrajo" (parse_error).
         if engine == "bing":
             url = f"https://www.bing.com/search?q={quote_plus(query)}"
             parse = _BING_PARSE
+            markup_selector = "li.b_algo, .b_algo, div.b_algo"
         elif engine == "ddg":
             url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
             parse = _DDG_PARSE
@@ -583,75 +849,77 @@ class StealthBrowser:
             url = f"https://www.google.com/search?q={quote_plus(query)}&hl=es"
             parse = _GOOGLE_PARSE
             markup_selector = "div.g, div[data-sokoban-container]"
+        elif engine == "mojeek":
+            url = f"https://www.mojeek.com/search?q={quote_plus(query)}"
+            parse = _MOJEEK_PARSE
+            markup_selector = "ul.results-standard li, li.result, div.result"
         else:
             raise ValueError(f"Motor de búsqueda no soportado: {engine}")
 
-        if engine == "bing":
-            markup_selector = "li.b_algo"
-
         try:
-            await self._ensure()
-            page = await self._context.new_page()
-            try:
-                response = await page.goto(
-                    url, timeout=SEARCH_TIMEOUT_MS, wait_until="domcontentloaded"
-                )
-                await asyncio.sleep(SETTLE_DELAY_S + random.uniform(0.1, 0.9))
-                if blocked := await self._looks_blocked(page, search_page=True):
-                    return {"status": "blocked", "reason": blocked, "results": []}
-                status_code = response.status if response else 0
-                if status_code >= 400:
-                    return {
-                        "status": "error",
-                        "reason": f"http_{status_code}",
-                        "results": [],
-                    }
-                raw = await page.evaluate(parse)
-                if not isinstance(raw, list):
-                    return {
-                        "status": "parse_error",
-                        "reason": "El parser no devolvió una lista de resultados",
-                        "results": [],
-                    }
-                results = self._dedupe(raw)[:top_k]
-                if results:
-                    return {"status": "results", "results": results}
-
-                matching_nodes = await page.locator(markup_selector).count()
-                body = await page.evaluate(
-                    "() => (document.body ? document.body.innerText.slice(0, 1200).toLowerCase() : '')"
-                )
-                if matching_nodes:
-                    return {
-                        "status": "parse_error",
-                        "reason": "La página contiene resultados, pero el parser no extrajo ninguno",
-                        "results": [],
-                    }
-                if any(
-                    marker in body
-                    for marker in (
-                        "no results",
-                        "no results found",
-                        "there are no results",
-                        "sin resultados",
-                        "no se han encontrado resultados",
+            # Contexto AISLADO por búsqueda: si esta falla, no arrastra a las
+            # demás búsquedas concurrentes (que es lo que quemaba el lote).
+            async with self._context_scope() as search_context:
+                page = await search_context.new_page()
+                try:
+                    response = await page.goto(
+                        url, timeout=SEARCH_TIMEOUT_MS, wait_until="domcontentloaded"
                     )
-                ):
-                    return {"status": "no_results", "results": []}
-                return {
-                    "status": "empty_or_unrecognized_page",
-                    "reason": "La página no muestra resultados ni un mensaje de búsqueda vacía",
-                    "results": [],
-                }
-            finally:
-                with contextlib.suppress(Exception):
-                    await page.close()
+                    await asyncio.sleep(SETTLE_DELAY_S + random.uniform(0.1, 0.9))
+                    if blocked := await self._looks_blocked(page, search_page=True):
+                        return {"status": "blocked", "reason": blocked, "results": []}
+                    status_code = response.status if response else 0
+                    if status_code >= 400:
+                        return {
+                            "status": "error",
+                            "reason": f"http_{status_code}",
+                            "results": [],
+                        }
+                    raw = await page.evaluate(parse)
+                    if not isinstance(raw, list):
+                        return {
+                            "status": "parse_error",
+                            "reason": "El parser no devolvió una lista de resultados",
+                            "results": [],
+                        }
+                    results = self._dedupe(raw)[:top_k]
+                    if results:
+                        return {"status": "results", "results": results}
+
+                    matching_nodes = await page.locator(markup_selector).count()
+                    body = await page.evaluate(
+                        "() => (document.body ? document.body.innerText.slice(0, 1200).toLowerCase() : '')"
+                    )
+                    if matching_nodes:
+                        return {
+                            "status": "parse_error",
+                            "reason": "La página contiene resultados, pero el parser no extrajo ninguno",
+                            "results": [],
+                        }
+                    if any(
+                        marker in body
+                        for marker in (
+                            "no results",
+                            "no results found",
+                            "there are no results",
+                            "sin resultados",
+                            "no se han encontrado resultados",
+                        )
+                    ):
+                        return {"status": "no_results", "results": []}
+                    return {
+                        "status": "empty_or_unrecognized_page",
+                        "reason": "La página no muestra resultados ni un mensaje de búsqueda vacía",
+                        "results": [],
+                    }
+                finally:
+                    with contextlib.suppress(Exception):
+                        await page.close()
         except Exception as exc:
             logger.warning("stealth-browser: search falló: %s", exc)
-            try:
-                await self._restart()
-            except RuntimeError as rb:
-                logger.warning("stealth-browser: %s", rb)
+            # Sólo se reconstruye el navegador si ha muerto; un timeout de
+            # red se propaga sin tocar el proceso de Chromium.
+            await self._recover(exc)
             return {"status": "error", "reason": str(exc), "results": []}
 
     async def navigate_and_snapshot(
@@ -668,21 +936,24 @@ class StealthBrowser:
 
         for attempt in (1, 2):
             try:
-                await self._ensure()
-                page = await self._context.new_page()
-                try:
-                    await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
-                    await self._settle_like_human(page)
-                    snap: dict[str, Any] = await page.evaluate(_SNAPSHOT_SCRIPT)
-                finally:
-                    with contextlib.suppress(Exception):
-                        await page.close()
+                async with self._context_scope() as nav_context:
+                    page = await nav_context.new_page()
+                    try:
+                        await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                        await self._settle_like_human(page)
+                        snap: dict[str, Any] = await page.evaluate(_SNAPSHOT_SCRIPT)
+                    finally:
+                        with contextlib.suppress(Exception):
+                            await page.close()
                 snap["text"] = (snap.get("text") or "")[:SNAPSHOT_MAX_CHARS]
                 return snap
             except Exception as exc:
                 logger.warning("stealth-browser: navigate falló (intento %d): %s", attempt, exc)
-                await self._restart()
-        raise RuntimeError(f"No se pudo navegar a {url} tras el reinicio del navegador")
+                # Sólo reconstruye si el navegador murió; si es un fallo de
+                # red, el segundo intento ya parte de un contexto limpio.
+                if not await self._recover(exc):
+                    await asyncio.sleep(0.2)
+        raise RuntimeError(f"No se pudo navegar a {url} tras 2 intentos")
 
     # ------------------------------------------------- navegación avanzada OSINT
     async def _settle_like_human(self, page: Any) -> None:
@@ -733,27 +1004,24 @@ class StealthBrowser:
         timeout_ms = max(1_000, min(int(float(timeout_s) * 1000), 120_000))
 
         try:
-            await self._ensure()
-            page = await self._context.new_page()
-            try:
-                resp = await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
-                await self._settle_like_human(page)
-                blocked = await self._looks_blocked(page)
-                return {
-                    "title": await page.title(),
-                    "url": page.url,
-                    "status": resp.status if resp else 0,
-                    "blocked": blocked,
-                }
-            finally:
-                with contextlib.suppress(Exception):
-                    await page.close()
+            async with self._context_scope() as nav_context:
+                page = await nav_context.new_page()
+                try:
+                    resp = await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                    await self._settle_like_human(page)
+                    blocked = await self._looks_blocked(page)
+                    return {
+                        "title": await page.title(),
+                        "url": page.url,
+                        "status": resp.status if resp else 0,
+                        "blocked": blocked,
+                    }
+                finally:
+                    with contextlib.suppress(Exception):
+                        await page.close()
         except Exception as exc:
             logger.warning("stealth-browser: navigate falló: %s", exc)
-            try:
-                await self._restart()
-            except RuntimeError as rb:
-                logger.warning("stealth-browser: %s", rb)
+            await self._recover(exc)
             raise
 
     async def screenshot(
@@ -771,29 +1039,30 @@ class StealthBrowser:
 
         timeout_ms = max(1_000, min(int(float(timeout_s) * 1000), 120_000))
         try:
-            await self._ensure()
-            page = await self._context.new_page()
-            try:
-                if url:
-                    if not re.match(r"^https?://", url, re.IGNORECASE):
-                        raise ValueError(f"Sólo se permite navegar a http(s): {url}")
-                    assert_public_http_url(url)  # C2: sin loopback/privada/link-local
-                    await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
-                await self._settle_like_human(page)
-                png = await page.screenshot(full_page=full_page, type="png")
-                return {
-                    "image_base64": base64.b64encode(png).decode("ascii"),
-                    "mime": "image/png",
-                    "title": await page.title(),
-                    "url": page.url,
-                    "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    "fingerprint": self._fingerprint["label"],
-                }
-            finally:
-                with contextlib.suppress(Exception):
-                    await page.close()
+            async with self._context_scope() as shot_context:
+                page = await shot_context.new_page()
+                try:
+                    if url:
+                        if not re.match(r"^https?://", url, re.IGNORECASE):
+                            raise ValueError(f"Sólo se permite navegar a http(s): {url}")
+                        assert_public_http_url(url)  # C2: sin loopback/privada/link-local
+                        await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                    await self._settle_like_human(page)
+                    png = await page.screenshot(full_page=full_page, type="png")
+                    return {
+                        "image_base64": base64.b64encode(png).decode("ascii"),
+                        "mime": "image/png",
+                        "title": await page.title(),
+                        "url": page.url,
+                        "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "fingerprint": self._fingerprint["label"],
+                    }
+                finally:
+                    with contextlib.suppress(Exception):
+                        await page.close()
         except Exception as exc:
             logger.warning("stealth-browser: screenshot falló: %s", exc)
+            await self._recover(exc)
             raise
 
     async def interact(
@@ -818,45 +1087,48 @@ class StealthBrowser:
         timeout_ms = max(1_000, min(int(float(timeout_s) * 1000), 120_000))
 
         try:
-            await self._ensure()
-            page = await self._context.new_page()
-            try:
-                await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
-                await self._settle_like_human(page)
+            async with self._context_scope() as act_context:
+                page = await act_context.new_page()
+                try:
+                    await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                    await self._settle_like_human(page)
 
-                for step in actions or []:
-                    act = step.get("action")
-                    if act == "click":
-                        await page.click(step["selector"], timeout=5_000)
-                    elif act == "fill":
-                        # Escritura con ritmo humano: delay por tecla.
-                        await page.type(
-                            step["selector"],
-                            str(step.get("text", "")),
-                            timeout=5_000,
-                            delay=random.randint(40, 130),
-                        )
-                    elif act == "press":
-                        await page.keyboard.press(str(step.get("key", "Enter")))
-                    elif act == "wait":
-                        await asyncio.sleep(max(0.1, min(float(step.get("ms", 1000)) / 1000, 30)))
-                    elif act == "scroll":
-                        await page.mouse.wheel(0, int(step.get("delta_y", 600)))
-                    else:
-                        raise ValueError(f"Acción desconocida: {act!r}")
-                    await asyncio.sleep(random.uniform(0.2, 0.8))
+                    for step in actions or []:
+                        act = step.get("action")
+                        if act == "click":
+                            await page.click(step["selector"], timeout=5_000)
+                        elif act == "fill":
+                            # Escritura con ritmo humano: delay por tecla.
+                            await page.type(
+                                step["selector"],
+                                str(step.get("text", "")),
+                                timeout=5_000,
+                                delay=random.randint(40, 130),
+                            )
+                        elif act == "press":
+                            await page.keyboard.press(str(step.get("key", "Enter")))
+                        elif act == "wait":
+                            await asyncio.sleep(
+                                max(0.1, min(float(step.get("ms", 1000)) / 1000, 30))
+                            )
+                        elif act == "scroll":
+                            await page.mouse.wheel(0, int(step.get("delta_y", 600)))
+                        else:
+                            raise ValueError(f"Acción desconocida: {act!r}")
+                        await asyncio.sleep(random.uniform(0.2, 0.8))
 
-                await asyncio.sleep(SETTLE_DELAY_S)
-                blocked = await self._looks_blocked(page)
-                snap: dict[str, Any] = await page.evaluate(_SNAPSHOT_SCRIPT)
-                snap["blocked"] = blocked
-                snap["text"] = (snap.get("text") or "")[:SNAPSHOT_MAX_CHARS]
-                return snap
-            finally:
-                with contextlib.suppress(Exception):
-                    await page.close()
+                    await asyncio.sleep(SETTLE_DELAY_S)
+                    blocked = await self._looks_blocked(page)
+                    snap: dict[str, Any] = await page.evaluate(_SNAPSHOT_SCRIPT)
+                    snap["blocked"] = blocked
+                    snap["text"] = (snap.get("text") or "")[:SNAPSHOT_MAX_CHARS]
+                    return snap
+                finally:
+                    with contextlib.suppress(Exception):
+                        await page.close()
         except Exception as exc:
             logger.warning("stealth-browser: interact falló: %s", exc)
+            await self._recover(exc)
             raise
 
     # ------------------------------------------------------------- utilidades

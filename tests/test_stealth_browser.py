@@ -64,11 +64,13 @@ async def test_web_search_via_stealth_browser(monkeypatch):
     assert result.metadata["results"] == 1
     assert any(e.value == "https://universidad.test/estudiantes/mendoza" for e in result.entities)
     # El colector barre todos los motores en paralelo y deduplica el hit
-    # compartido: una sola entidad, tres observaciones de motor.
+    # compartido: una sola entidad, una observación por motor. `mojeek` está
+    # como red de seguridad (motor independiente, sin captcha).
     assert sorted(fake.search_calls) == [
         ("Carlos Mendoza", "bing"),
         ("Carlos Mendoza", "ddg"),
         ("Carlos Mendoza", "google"),
+        ("Carlos Mendoza", "mojeek"),
     ]
     assert result.metadata["status"] == "COMPLETED"
 
@@ -91,12 +93,13 @@ async def test_web_search_bing_empty_falls_back_to_ddg(monkeypatch):
 
     assert result.metadata["ok"] is True
     assert result.metadata["results"] == 1
-    # Barrido paralelo de los tres motores; el hit lo aporta el que sí
+    # Barrido paralelo de todos los motores; el hit lo aporta el que sí
     # devuelve resultados.
     assert sorted(fake.search_calls) == [
         ("test", "bing"),
         ("test", "ddg"),
         ("test", "google"),
+        ("test", "mojeek"),
     ]
     assert result.metadata["status"] == "COMPLETED"
 
