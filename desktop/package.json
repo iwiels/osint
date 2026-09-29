@@ -2,7 +2,13 @@
   "name": "wraith-desktop",
   "version": "0.3.0",
   "private": true,
-  "description": "WraithOSINT Desktop - Consola forense sobre el motor Wraith",
+  "description": "WraithOSINT Desktop - forensic console for the Wraith engine",
+  "author": {
+    "name": "iwiels",
+    "email": "158532848+iwiels@users.noreply.github.com",
+    "url": "https://github.com/iwiels"
+  },
+  "homepage": "https://github.com/iwiels/osint#readme",
   "license": "MIT",
   "main": "out/main/index.js",
   "scripts": {

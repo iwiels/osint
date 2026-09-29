@@ -58,6 +58,11 @@ jobs:
       - name: Compilar binario del motor
         run: python scripts/build-engine.py
 
+      - name: Smoke test del binario
+        # Arranca el ejecutable recién compilado y comprueba /health, la autenticación
+        # y un caso real: un motor roto no debe llegar nunca a un instalador.
+        run: python scripts/smoke_engine_binary.py
+
       - name: Subir binario del motor
         uses: actions/upload-artifact@v4
         with:
@@ -140,6 +145,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Solo para leer .github/release-notes.md; los instaladores vienen de los artefactos.
+      - uses: actions/checkout@v4
+
       - name: Descargar todos los instaladores
         uses: actions/download-artifact@v4
         with:
@@ -150,6 +158,10 @@ jobs:
       - name: Publicar en GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: WraithOSINT ${{ github.ref_name }}
+          # El cuerpo propio (descargas, primer arranque, uso responsable) va delante de
+          # las notas autogeneradas con los cambios desde el release anterior.
+          body_path: .github/release-notes.md
           files: release-assets/*
           generate_release_notes: true
           draft: false
