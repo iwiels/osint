@@ -13,7 +13,8 @@ by CI).
     npm ci
 
     # 2. Install Python quality tools in the engine virtual environment.
-    engine/.venv/bin/python -m pip install pytest pytest-cov ruff
+    # pytest-asyncio is required: pyproject.toml enables asyncio_mode = "auto".
+    engine/.venv/bin/python -m pip install pytest pytest-asyncio pytest-cov ruff
 
 On Windows, use engine\.venv\Scripts\python.exe instead of
 engine/.venv/bin/python.

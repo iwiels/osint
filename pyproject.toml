@@ -60,6 +60,9 @@ packages = ["engine/specter"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Sin pytest-asyncio los tests async fallan en bloque con errores crípticos;
+# mejor abortar al arrancar con un mensaje claro.
+required_plugins = ["pytest-asyncio"]
 testpaths = ["tests"]
 pythonpath = ["engine"]
 addopts = "--cov=specter --cov=engine --cov-report=term-missing:skip-covered --cov-fail-under=80"
