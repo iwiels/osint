@@ -2,6 +2,13 @@ appId: io.wraith.osint
 productName: WraithOSINT
 copyright: MIT
 
+# La app no tiene dependencias nativas: el renderer va empaquetado con Vite y el proceso
+# principal solo usa Electron y Node. Con workspaces de npm no existe desktop/node_modules
+# y electron-builder reaccionaba ejecutando `npm install --production` ahí, lo que poda las
+# devDependencies de la raíz, electron-builder incluido: el empaquetado moría con
+# «spawn app-builder ENOENT». Sin reconstrucción no hay instalación.
+npmRebuild: false
+
 directories:
   output: release
   buildResources: build
