@@ -123,6 +123,14 @@ y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/).
   contra el OpenSSL del runner y PyInstaller empaquetaba otro `libssl`. El smoke test
   del binario lo detectó antes de generar el instalador; el release fija
   `cryptography<49` solo en ese runner.
+- **electron-builder no encontraba Electron.** Corre desde `desktop/` y solo busca
+  `electron` en `desktop/node_modules`, pero los workspaces de npm lo dejan en la
+  raíz; sin encontrarlo abortaba con «Cannot compute electron version». Los cuatro
+  instaladores del release fallaban ahí, y `npm run dist:*` en local también. El
+  script `dist` pasa ahora la versión instalada (`desktop/scripts/dist.mjs`).
+- Los paquetes de Linux se llaman `linux-x86_64.AppImage` y `linux-amd64.deb`
+  (la convención de cada formato), no `linux-x64`: corregidos el README, las notas
+  del release y la cabecera del workflow.
 - **La CI no instalaba `pytest-asyncio`**: todos los tests `async` fallaban y la
   cobertura caía al 42 %. Ahora se instala en CI y en la guía de contribución, y
   `pyproject.toml` lo declara en `required_plugins` para abortar con un mensaje

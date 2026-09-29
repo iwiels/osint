@@ -86,8 +86,8 @@ with the app, so **Python is not required**.
 | **Windows** (x64) | `WraithOSINT-<version>-win-x64-setup.exe` | Per-user installer, no admin rights needed |
 | **macOS** (Apple Silicon) | `WraithOSINT-<version>-mac-arm64.dmg` | Also available as `.zip`. Not signed or notarized yet |
 | **macOS** (Intel) | `WraithOSINT-<version>-mac-x64.dmg` | Also available as `.zip`. Not signed or notarized yet |
-| **Linux** (x64) | `WraithOSINT-<version>-linux-x64.AppImage` | Portable, runs on most distributions |
-| **Linux** (x64) | `WraithOSINT-<version>-linux-x64.deb` | Debian and Ubuntu package |
+| **Linux** (x64) | `WraithOSINT-<version>-linux-x86_64.AppImage` | Portable, runs on most distributions |
+| **Linux** (x64) | `WraithOSINT-<version>-linux-amd64.deb` | Debian and Ubuntu package |
 
 <details>
 <summary><b>First launch</b>: the installers are not code-signed yet</summary>
@@ -97,7 +97,7 @@ with the app, so **Python is not required**.
   (**Open Anyway**). Frictionless distribution needs a Developer ID certificate and
   notarization (see the [roadmap](ARCHITECTURE.md#roadmap)).
 - **Linux:** make the AppImage executable with `chmod +x`, or install the package with
-  `sudo apt install ./WraithOSINT-<version>-linux-x64.deb`.
+  `sudo apt install ./WraithOSINT-<version>-linux-amd64.deb`.
 
 </details>
 
