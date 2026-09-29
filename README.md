@@ -24,7 +24,8 @@ Antigravity u otras apps Electron profesionales.
   a partir de sombras (UTC).
 - **Consola desktop** (Electron + React): gestión de casos, visualización del grafo,
   auditoría de cadena de custodia y **consola de agente IA** que orquesta las
-  herramientas forenses con approval humana (permission gate).
+  herramientas forenses con approval humana (diálogo de permisos del agente +
+  permission gate fail-closed en las llamadas directas a la API).
 - **Multi-provider**: Anthropic, OpenAI, **OpenCode Zen (modelos free con
   reintento automático ante rate limit)**, Ollama (local) o cualquier endpoint
   OpenAI-compatible.
@@ -160,7 +161,10 @@ responde con `POST /agent/permissions/respond {request_id, decision}`.
 ## Estado y roadmap
 
 **H1 (actual)**: plataforma desktop operativa — engine HTTP con SSE, agente
-multi-provider con permission gate, grafo, cadena de custodia y dossiers.
+multi-provider con diálogo de permisos, permission gate en la API directa,
+grafo, cadena de custodia y dossiers. El borrado de casos por vía directa
+está denegado por defecto (regla `delete/case:*`); se habilita por caso con
+`add_permission_rule` (`action=delete`, `resource=case:<id>`, `effect=allow`).
 
 **Preservación y análisis implementados**: hash WARC registrado en el ledger,
 transporte TLS impersonado en los colectores que usan `httpx_transport`, resolución

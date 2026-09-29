@@ -35,6 +35,81 @@ class PermissionAction(StrEnum):
     DELETE = "delete"
 
 
+# ------------------------------------------------------------------
+# Política de tools (fuente única): la consumen el diálogo del agente
+# (SAFE/SENSITIVE + cola de permisos) y el gate de llamadas directas.
+# ------------------------------------------------------------------
+
+# Tools que se pueden ejecutar sin preguntar (lecturas pasivas).
+SAFE_TOOLS = {
+    "list_cases",
+    "query_graph",
+    "analyze_network_metrics",
+    "verify_case_integrity",
+    "correlate_cases",
+    "suggest_identity_links_fs",
+    "estimate_capture_time",
+    "case_timeline",
+    "attest_case_ledger",
+    "list_collectors",
+    "triage_entity",
+    "web_search",
+    "parallel_search",
+    "load_skill",
+    "todowrite",
+    # Lectura pura: descarga y extrae texto, no escribe en el caso (la ingesta
+    # la hacen los wrappers de escritura, que sí piden permiso). Pedir
+    # aprobación por cada fetch ahogó la sesión real de investigación en
+    # timeouts de 300s.
+    "web_fetch",
+    # Lecturas del navegador sin navegación nueva ni persistencia.
+    "browser_snapshot",
+    "browser_status",
+    # Válvula de escape del loop: bloquearla podría dejar al agente sin salida
+    # ante una ambigüedad (p.ej. un DNI sin pivotes), así que nunca pide permiso.
+    "ask_analyst",
+}
+
+# Tools que disparan recolección activa / escritura en el caso.
+SENSITIVE_TOOLS = {
+    "create_case",
+    "investigate_domain",
+    "enumerate_subdomains",
+    "investigate_ip",
+    "investigate_identity",
+    "investigate_email",
+    "investigate_person",
+    "deep_research",
+    "hunt_documents_and_leaks",
+    "deep_investigate_github",
+    "analyze_file_metadata",
+    "link_entities",
+    "export_case_dossier",
+    "run_collector",
+    "browser_capture_warc",
+}
+
+# Bloqueo duro (ni con aprobación): patrones fnmatch sobre el nombre.
+# Vacío por defecto; el analista puede endurecerlo sin tocar código.
+DENY_PATTERNS: tuple[str, ...] = ()
+
+# Tools bloqueadas por nombre exacto (ni el diálogo las desbloquea).
+DENY_TOOLS: set[str] = set()
+
+
+def _permission_action(name: str) -> str:
+    """allow | ask | deny para una tool (reglas estilo opencode permission).
+
+    Orden: deny explícito > allow explícito (SAFE_TOOLS) > ask por defecto.
+    Las tools futuras/desconocidas piden permiso en vez de ejecutarse solas.
+    """
+    if name in DENY_TOOLS or any(fnmatch.fnmatchcase(name, pat) for pat in DENY_PATTERNS):
+        return "deny"
+    if name in SAFE_TOOLS:
+        return "allow"
+    return "ask"
+
+
 class PermissionRule(BaseModel):
     """Regla de permisos con soporte para wildcards.
 
@@ -67,10 +142,18 @@ class PermissionRequest(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
+def _is_exact_rule(rule: PermissionRule) -> bool:
+    """True si la regla no usa wildcards (apunta a un recurso concreto)."""
+    return not any(c in rule.action for c in "*?[") and not any(
+        c in rule.resource for c in "*?["
+    )
+
+
 class PermissionGate:
     """Motor de permisos con soporte para wildcards.
 
-    Evalúa reglas en orden de inserción. La primera regla que coincide determina
+    Las reglas exactas (sin wildcards) preceden a las genéricas; dentro del
+    mismo nivel, la primera regla que coincide determina el efecto. Si ninguna
     el efecto. Si ninguna regla coincide, el efecto por defecto es 'ask' (fail-closed).
 
     El gate puede emitir eventos cuando se encuentra una regla 'ask', permitiendo
@@ -141,6 +224,66 @@ class PermissionGate:
                 effect="deny",
                 description="Eliminar casos está denegado por defecto",
             ),
+            # Tools que la propia UI/API llama directamente (POST /tools/...):
+            # se contemplan explícitamente. El resto de tools sensibles queda
+            # denegado en llamadas directas hasta que se añada una regla
+            # (add_permission_rule): deny por defecto para lo no contemplado.
+            PermissionRule(
+                action="collect",
+                resource="tool:create_case",
+                effect="allow",
+                description="La UI crea casos por POST /cases (directo, no vía agente)",
+            ),
+            PermissionRule(
+                action="collect",
+                resource="tool:run_collector",
+                effect="allow",
+                description="Ejecución directa de colectores desde la API",
+            ),
+            PermissionRule(
+                action="correlate",
+                resource="tool:link_entities",
+                effect="allow",
+                description="La UI enlaza entidades desde la vista de correlaciones",
+            ),
+            PermissionRule(
+                action="export",
+                resource="tool:export_case_dossier",
+                effect="allow",
+                description="La UI exporta el dossier desde la tabla de custodia",
+            ),
+            # Meta-herramientas del propio gate: sin ellas no se puede ni
+            # consultar ni conceder el allow explícito desde la API directa.
+            PermissionRule(
+                action="*",
+                resource="tool:list_permissions",
+                effect="allow",
+                description="Consultar reglas activas",
+            ),
+            PermissionRule(
+                action="*",
+                resource="tool:add_permission_rule",
+                effect="allow",
+                description="Conceder allow explícito (escape hatch del gate)",
+            ),
+            PermissionRule(
+                action="*",
+                resource="tool:remove_permission_rule",
+                effect="allow",
+                description="Retirar reglas",
+            ),
+            PermissionRule(
+                action="*",
+                resource="tool:check_permission",
+                effect="allow",
+                description="Comprobar una acción/recurso concretos",
+            ),
+            PermissionRule(
+                action="*",
+                resource="tool:evaluate_permission",
+                effect="allow",
+                description="Evaluar el efecto de las reglas",
+            ),
         ]
         for rule in defaults:
             self._rules.append(rule)
@@ -181,7 +324,10 @@ class PermissionGate:
     def evaluate(self, action: str, resource: str) -> PermissionEffect:
         """Evalúa los permisos para una acción y recurso.
 
-        Evalúa reglas en orden. La primera regla que coincide determina el efecto.
+        Las reglas exactas (sin wildcards) preceden a las genéricas: un allow
+        explícito para un recurso concreto (`delete` sobre `case:abc`) gana al
+        deny por defecto (`delete` sobre `case:*`). Dentro del mismo nivel,
+        la primera regla que coincide determina el efecto.
         Si ninguna regla coincide, retorna 'ask' (fail-closed por seguridad).
 
         Args:
@@ -189,11 +335,13 @@ class PermissionGate:
             resource: Recurso a evaluar (ej: "collector:dns_zonexfer")
 
         Returns:
-            El efecto de la primera regla coincidente, o 'ask' si ninguna coincide
+            El efecto de la regla coincidente con más precedencia, o 'ask'
         """
-        for rule in self._rules:
-            if rule.matches(action, resource):
-                return PermissionEffect(rule.effect)
+        matches = [r for r in self._rules if r.matches(action, resource)]
+        # Estable: conserva el orden de inserción dentro de cada nivel.
+        matches.sort(key=lambda r: not _is_exact_rule(r))
+        if matches:
+            return PermissionEffect(matches[0].effect)
         # Fail-closed: si ninguna regla coincide, pedir confirmación
         return PermissionEffect.ASK
 
@@ -278,3 +426,71 @@ class PermissionGate:
 # Instancia global del Permission Gate
 # Se inicializa con las reglas por defecto y puede ser reemplazado en tests
 permission_gate = PermissionGate()
+
+
+# Mapa tool -> acción del gate para las llamadas directas (las tools sin
+# entrada caen a "collect", la acción por defecto de recolección activa).
+TOOL_ACTIONS: dict[str, str] = {
+    "run_collector": "collect",
+    "investigate_domain": "collect",
+    "investigate_ip": "collect",
+    "investigate_identity": "collect",
+    "investigate_person": "collect",
+    "investigate_email": "collect",
+    "analyze_file_metadata": "collect",
+    "hunt_office_docs": "collect",
+    "hunt_documents_and_leaks": "collect",
+    "deep_investigate_github": "collect",
+    "deep_research": "collect",
+    "enumerate_subdomains": "collect",
+    "link_entities": "correlate",
+    "correlate_cases": "correlate",
+    "run_correlations": "correlate",
+    "export_case_dossier": "export",
+    "export_case_stix": "export",
+    "delete_case": "delete",
+}
+
+
+def tool_resource(tool_name: str, arguments: dict[str, Any] | None = None) -> str:
+    """Recurso gate para una llamada directa.
+
+    El borrado se evalúa contra la regla `delete/case:*` (deny por defecto,
+    salvo allow explícito); el resto se evalúa a escala de tool
+    (`tool:{nombre}`), que es lo que las reglas por defecto contemplan.
+    """
+    if TOOL_ACTIONS.get(tool_name) == "delete":
+        case_id = (arguments or {}).get("case_id")
+        return f"case:{case_id}" if case_id else "case:*"
+    return f"tool:{tool_name}"
+
+
+def _check_tool_permission(tool_name: str, resource: str) -> tuple[bool, str]:
+    """Verifica si una tool puede ejecutarse por la vía directa (API/MCP).
+
+    Args:
+        tool_name: Nombre de la tool (ej: "delete_case")
+        resource: Recurso gate (usa `tool_resource()` para derivarlo)
+
+    Returns:
+        Tupla (permitido, mensaje_error). `""` cuando está permitido.
+    """
+    policy = _permission_action(tool_name)
+    if policy == "deny":
+        return False, f"PERMISSION_DENIED: {tool_name} bloqueada por política (deny)"
+
+    action = TOOL_ACTIONS.get(tool_name, "collect")
+    allowed, request = permission_gate.check(action, resource)
+    if allowed:
+        return True, ""
+    if request is None:
+        return False, (
+            f"PERMISSION_DENIED: {action} sobre {resource} no está permitido "
+            "(regla deny o sin regla allow; usa add_permission_rule para autorizarlo)"
+        )
+    # ASK (fail-closed): las tools SAFE pasan; en la vía directa no hay
+    # diálogo con el analista, así que el resto se deniega.
+    if policy == "allow":
+        return True, ""
+    permission_gate.emit_permission_request(request)
+    return False, f"PERMISSION_REQUIRED: {request.message}"

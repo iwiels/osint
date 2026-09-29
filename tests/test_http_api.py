@@ -528,8 +528,13 @@ async def test_agent_sessions_endpoints(engine) -> None:
 
 
 async def test_caso_se_borra_en_cascada(engine) -> None:
-    """DELETE /cases/{id}: caso + entidades + ledger + sesiones del caso."""
+    """DELETE /cases/{id}: caso + entidades + ledger + sesiones del caso.
+
+    El borrado directo exige allow explícito del gate (deny por defecto):
+    el test concede la regla exacta y la retira al terminar.
+    """
     from specter.osint_core.models import AgentSession, EntityNode, EntityType
+    from specter.osint_core.permission_gate import PermissionRule, permission_gate
 
     transport = httpx.ASGITransport(app=engine.app)
     async with httpx.AsyncClient(
@@ -549,14 +554,48 @@ async def test_caso_se_borra_en_cascada(engine) -> None:
             )
         )
 
-        gone = await client.delete(f"/cases/{case_id}")
-        assert gone.status_code == 200
-        assert gone.json() == {"status": "ok", "case_id": case_id}
-        assert (await client.get(f"/cases/{case_id}")).status_code == 404
-        assert (await client.get(f"/cases/{case_id}/ledger")).status_code == 404
-        assert (await client.delete(f"/cases/{case_id}")).status_code == 404
-        assert engine.db.get_case_entities(case_id) == []
-        assert engine.db.get_agent_session("sess-borrar") is None
+        rule = permission_gate.add_rule(
+            PermissionRule(action="delete", resource=f"case:{case_id}", effect="allow")
+        )
+        try:
+            gone = await client.delete(f"/cases/{case_id}")
+            assert gone.status_code == 200
+            assert gone.json() == {"status": "ok", "case_id": case_id}
+            assert (await client.get(f"/cases/{case_id}")).status_code == 404
+            assert (await client.get(f"/cases/{case_id}/ledger")).status_code == 404
+            assert (await client.delete(f"/cases/{case_id}")).status_code == 404
+            assert engine.db.get_case_entities(case_id) == []
+            assert engine.db.get_agent_session("sess-borrar") is None
+        finally:
+            permission_gate.remove_rule(rule.rule_id)
+
+
+async def test_delete_case_directo_denegado_sin_allow(engine) -> None:
+    """El borrado directo sin allow explícito → 403 y el caso sobrevive."""
+    transport = httpx.ASGITransport(app=engine.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers=TEST_AUTH_HEADERS
+    ) as client:
+        case_id = await _seed_case(engine, client, name="Caso no borrar")
+
+        res = await client.delete(f"/cases/{case_id}")
+        assert res.status_code == 403
+        assert "PERMISSION_DENIED" in res.json()["detail"]
+        assert (await client.get(f"/cases/{case_id}")).status_code == 200
+
+
+async def test_tool_sensible_directa_denegada_sin_regla(engine) -> None:
+    """investigate_domain (sensible, sin regla allow) por vía directa → 403."""
+    transport = httpx.ASGITransport(app=engine.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers=TEST_AUTH_HEADERS
+    ) as client:
+        res = await client.post(
+            "/tools/investigate_domain/call",
+            json={"arguments": {"case_id": "case-x", "target": "x.test"}},
+        )
+        assert res.status_code == 403
+        assert "PERMISSION_REQUIRED" in res.json()["detail"]
 
 
 async def test_agent_run_acepta_session_id(engine, monkeypatch) -> None:

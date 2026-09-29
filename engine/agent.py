@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import fnmatch
 import json
 import os
 import re
@@ -33,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from specter.osint_core.permission_gate import _permission_action
 from specter.secrets import get_secret, provider_secret_name
 
 from engine.registry import call_tool_validated, get_tool_schemas
@@ -45,74 +45,9 @@ EmitFn = Callable[[str, dict[str, Any]], Awaitable[None]]
 # event bus (SSE) y la respuesta entra por POST /agent/permissions/respond.
 # ------------------------------------------------------------------
 
-# Tools que el agente puede ejecutar sin preguntar (lecturas pasivas).
-SAFE_TOOLS = {
-    "list_cases",
-    "query_graph",
-    "analyze_network_metrics",
-    "verify_case_integrity",
-    "correlate_cases",
-    "suggest_identity_links_fs",
-    "estimate_capture_time",
-    "case_timeline",
-    "attest_case_ledger",
-    "list_collectors",
-    "triage_entity",
-    "web_search",
-    "parallel_search",
-    "load_skill",
-    "todowrite",
-    # Lectura pura: descarga y extrae texto, no escribe en el caso (la ingesta
-    # la hacen los wrappers de escritura, que sí piden permiso). Pedir
-    # aprobación por cada fetch ahogó la sesión real de investigación en
-    # timeouts de 300s.
-    "web_fetch",
-    # Lecturas del navegador sin navegación nueva ni persistencia.
-    "browser_snapshot",
-    "browser_status",
-    # Válvula de escape del loop: bloquearla podría dejar al agente sin salida
-    # ante una ambigüedad (p.ej. un DNI sin pivotes), así que nunca pide permiso.
-    "ask_analyst",
-}
-
-# Tools que disparan recolección activa / escritura en el caso.
-SENSITIVE_TOOLS = {
-    "create_case",
-    "investigate_domain",
-    "enumerate_subdomains",
-    "investigate_ip",
-    "investigate_identity",
-    "investigate_email",
-    "investigate_person",
-    "deep_research",
-    "hunt_documents_and_leaks",
-    "deep_investigate_github",
-    "analyze_file_metadata",
-    "link_entities",
-    "export_case_dossier",
-    "run_collector",
-    "browser_capture_warc",
-}
-
-# Bloqueo duro (ni con aprobación): patrones fnmatch sobre el nombre.
-# Vacío por defecto; el analista puede endurecerlo sin tocar código.
-DENY_PATTERNS: tuple[str, ...] = ()
-
-# Tools bloqueadas por nombre exacto (ni el diálogo las desbloquea).
-DENY_TOOLS: set[str] = set()
-
-
-def _permission_action(name: str) -> str:
-    """allow | ask | deny para una tool (reglas estilo opencode permission).
-
-    Orden: deny explícito > allow explícito (SAFE_TOOLS) > ask por defecto.
-    Las tools futuras/desconocidas piden permiso en vez de ejecutarse solas.
-    """
-    if name in DENY_TOOLS or any(fnmatch.fnmatchcase(name, pat) for pat in DENY_PATTERNS):
-        return "deny"
-    if name in SAFE_TOOLS:
-        return "allow"
-    return "ask"
+# La clasificación de tools (SAFE/SENSITIVE/DENY y _permission_action) vive
+# en el permission gate: fuente única para este diálogo y para las llamadas
+# directas a la API. Aquí sólo se importa la acción por nombre.
 
 
 # Espera máxima a que el analista responda una petición de permiso. Es el
@@ -866,9 +801,12 @@ async def _execute_tool(
 
     # Invocación validada vía el registry unificado, con timeout propio: una
     # tool colgada devuelve error accionable en vez de secuestrar el loop.
+    # policy_checked=True: el diálogo de arriba ya autorizó (SAFE directo o
+    # analista); el gate de servidor no se re-evalúa en la vía del agente.
     try:
         return await asyncio.wait_for(
-            call_tool_validated(name, arguments), timeout=TOOL_TIMEOUT_SECONDS
+            call_tool_validated(name, arguments, policy_checked=True),
+            timeout=TOOL_TIMEOUT_SECONDS,
         )
     except TimeoutError:
         return json.dumps(

@@ -10,6 +10,8 @@ import asyncio
 import json
 
 import pytest
+from specter.osint_core import permission_gate as permission_gate_module
+from specter.osint_core.permission_gate import _permission_action
 
 from engine import agent as agent_module
 from engine.agent import (
@@ -17,7 +19,6 @@ from engine.agent import (
     _doom_key,
     _fit_for_model,
     _note_call,
-    _permission_action,
     _resolve_mentions,
     reply_question,
 )
@@ -68,10 +69,10 @@ def test_permission_action_reglas() -> None:
 
 
 def test_permission_action_deny(monkeypatch) -> None:
-    monkeypatch.setattr(agent_module, "DENY_TOOLS", {"triage_entity"})
+    monkeypatch.setattr(permission_gate_module, "DENY_TOOLS", {"triage_entity"})
     assert _permission_action("triage_entity") == "deny"
-    monkeypatch.setattr(agent_module, "DENY_TOOLS", set())
-    monkeypatch.setattr(agent_module, "DENY_PATTERNS", ("investigate_*",))
+    monkeypatch.setattr(permission_gate_module, "DENY_TOOLS", set())
+    monkeypatch.setattr(permission_gate_module, "DENY_PATTERNS", ("investigate_*",))
     assert _permission_action("investigate_identity") == "deny"
     assert _permission_action("triage_entity") == "allow"
 
@@ -135,7 +136,7 @@ async def test_ask_analyst_rechaza_vacio() -> None:
 
 
 async def test_execute_tool_timeout(monkeypatch) -> None:
-    async def lenta(name: str, arguments: dict) -> str:
+    async def lenta(name: str, arguments: dict, **kwargs: object) -> str:
         await asyncio.sleep(5)
         return "{}"
 
@@ -151,7 +152,7 @@ async def test_execute_tool_timeout(monkeypatch) -> None:
 
 
 async def test_execute_tool_deny(monkeypatch) -> None:
-    monkeypatch.setattr(agent_module, "DENY_TOOLS", {"triage_entity"})
+    monkeypatch.setattr(permission_gate_module, "DENY_TOOLS", {"triage_entity"})
 
     async def emit(kind: str, payload: dict) -> None:
         return None
